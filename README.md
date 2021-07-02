@@ -12,7 +12,8 @@ python <algo_name>.py # such as `maddpg.py`
 ```
 
 ## Contributing
-Contributions are always welcome! Feel free to send a `pull-request` if you
+Contributions are always welcome! 
+
+Feel free to send a `pull-request` if you
 would like to add a new algorithm or further optimize an existing algorithm.
 If adding a new algorithm, it will be nice if it could be tested with ma-gym to maintain consistency.
-Also, please adhere to using 'convential-commits' for the commit messages.
