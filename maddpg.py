@@ -65,9 +65,10 @@ class QNet(nn.Module):
     def __init__(self, observation_space, action_space):
         super(QNet, self).__init__()
         self.num_agents = len(observation_space)
+        total_action = sum([_.n for _ in action_space])
         total_obs = sum([_.shape[0] for _ in observation_space])
         for agent_i in range(self.num_agents):
-            setattr(self, 'agent_{}'.format(agent_i), nn.Sequential(nn.Linear(total_obs + self.num_agents, 128),
+            setattr(self, 'agent_{}'.format(agent_i), nn.Sequential(nn.Linear(total_obs + total_action, 128),
                                                                     nn.ReLU(),
                                                                     nn.Linear(128, 64),
                                                                     nn.ReLU(),
@@ -75,7 +76,8 @@ class QNet(nn.Module):
 
     def forward(self, obs, action):
         q_values = [torch.empty(obs.shape[0], )] * self.num_agents
-        x = torch.cat((obs.view(obs.shape[0], obs.shape[1] * obs.shape[2]), action), dim=1)
+        x = torch.cat((obs.view(obs.shape[0], obs.shape[1] * obs.shape[2]),
+                       action.view(action.shape[0], action.shape[1] * action.shape[2])), dim=1)
         for agent_i in range(self.num_agents):
             q_values[agent_i] = getattr(self, 'agent_{}'.format(agent_i))(x)
 
@@ -93,8 +95,8 @@ def train(mu, mu_target, q, q_target, memory, q_optimizer, mu_optimizer, gamma, 
     next_state_action_logits = mu_target(next_state)
     _, n_agents, action_size = next_state_action_logits.shape
     next_state_action_logits = next_state_action_logits.view(batch_size * n_agents, action_size)
-    next_state_action = F.gumbel_softmax(logits=next_state_action_logits, tau=0.1, hard=False).max(dim=1)[0]
-    next_state_action = next_state_action.view(batch_size, n_agents)
+    next_state_action = F.gumbel_softmax(logits=next_state_action_logits, tau=0.1, hard=True)
+    next_state_action = next_state_action.view(batch_size, n_agents, action_size)
 
     target = reward + gamma * q_target(next_state, next_state_action) * done_mask
     q_loss = F.smooth_l1_loss(q(state, action), target.detach())
@@ -104,10 +106,11 @@ def train(mu, mu_target, q, q_target, memory, q_optimizer, mu_optimizer, gamma, 
 
     state_action_logits = mu(state)
     state_action_logits = state_action_logits.view(batch_size * n_agents, action_size)
-    state_action = F.gumbel_softmax(logits=state_action_logits, tau=0.1, hard=False).max(dim=1)[0]
-    state_action = state_action.view(batch_size, n_agents)
+    state_action = F.gumbel_softmax(logits=state_action_logits, tau=0.1, hard=True)
+    state_action = state_action.view(batch_size, n_agents, action_size)
 
     mu_loss = -q(state, state_action).mean()  # That's all for the policy loss.
+    q_optimizer.zero_grad()
     mu_optimizer.zero_grad()
     mu_loss.backward()
     mu_optimizer.step()
@@ -130,6 +133,13 @@ def test(env, num_episodes, mu):
     return sum(score / num_episodes)
 
 
+def one_hot_action(action, action_space):
+    one_hot = [[0 for _ in range(_.n)] for _ in action_space]
+    for action_i, action in enumerate(action):
+        one_hot[action_i][action] = 1
+    return one_hot
+
+
 def main(env_name, lr_mu, lr_q, tau, gamma, batch_size):
     env = gym.make(env_name)
     test_env = gym.make(env_name)
@@ -149,17 +159,17 @@ def main(env_name, lr_mu, lr_q, tau, gamma, batch_size):
     for episode_i in range(10000):
         state = env.reset()
         done = [False for _ in range(env.n_agents)]
-
+        env.render()
         while not all(done):
-            env.render()
             action_logits = mu(torch.Tensor(state).unsqueeze(0))
             action_probs = F.gumbel_softmax(logits=action_logits.squeeze(0), tau=1, hard=False)
             action = Categorical(probs=action_probs).sample().data.cpu().numpy().tolist()
             next_state, reward, done, info = env.step(action)
-            memory.put((state, action, (np.array(reward)).tolist(), next_state,
+            memory.put((state, one_hot_action(action, env.action_space), (np.array(reward)).tolist(), next_state,
                         np.array(done, dtype=int).tolist()))
             score += np.array(reward)
             state = next_state
+            env.render()
 
         if memory.size() > 2000:
             for i in range(10):
@@ -178,7 +188,7 @@ def main(env_name, lr_mu, lr_q, tau, gamma, batch_size):
 
 
 if __name__ == '__main__':
-    main(env_name='ma_gym:Checkers-v0',
+    main(env_name='ma_gym:Switch2-v0',
          lr_mu=0.0005,
          lr_q=0.001,
          tau=0.005,
