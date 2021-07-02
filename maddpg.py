@@ -6,9 +6,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.distributions import Categorical
 
 
-class ReplayBuffer():
+class ReplayBuffer:
     def __init__(self, buffer_limit):
         self.buffer = collections.deque(maxlen=buffer_limit)
 
@@ -22,33 +23,63 @@ class ReplayBuffer():
         for transition in mini_batch:
             s, a, r, s_prime, done = transition
             s_lst.append(s)
-            a_lst.append([a])
-            r_lst.append([r])
+            a_lst.append(a)
+            r_lst.append(r)
             s_prime_lst.append(s_prime)
-            done_mask = 0.0 if done else 1.0
-            done_mask_lst.append([done_mask])
+            done_mask_lst.append((np.ones(len(done)) - done).tolist())
 
-        return torch.tensor(s_lst, dtype=torch.float), torch.tensor(a_lst, dtype=torch.float), \
-               torch.tensor(r_lst, dtype=torch.float), torch.tensor(s_prime_lst, dtype=torch.float), \
+        return torch.tensor(s_lst, dtype=torch.float), \
+               torch.tensor(a_lst, dtype=torch.float), \
+               torch.tensor(r_lst, dtype=torch.float), \
+               torch.tensor(s_prime_lst, dtype=torch.float), \
                torch.tensor(done_mask_lst, dtype=torch.float)
 
     def size(self):
         return len(self.buffer)
 
 
-def train(mu, mu_target, q, q_target, memory, q_optimizer, mu_optimizer, gamma, batch_size):
-    s, a, r, s_prime, done_mask = memory.sample(batch_size)
+class MuNet(nn.Module):
+    def __init__(self, observation_space, action_space):
+        super(MuNet, self).__init__()
+        self.num_agents = len(observation_space)
+        self.action_space = action_space
+        for agent_i in range(self.num_agents):
+            n_obs = observation_space[agent_i].shape[0]
+            num_action = action_space[agent_i].n
+            setattr(self, 'agent_{}'.format(agent_i), nn.Sequential(nn.Linear(n_obs, 128),
+                                                                    nn.ReLU(),
+                                                                    nn.Linear(128, 64),
+                                                                    nn.ReLU(),
+                                                                    nn.Linear(64, num_action)))
 
-    target = r + gamma * q_target(s_prime, mu_target(s_prime)) * done_mask
-    q_loss = F.smooth_l1_loss(q(s, a), target.detach())
-    q_optimizer.zero_grad()
-    q_loss.backward()
-    q_optimizer.step()
+    def forward(self, obs):
+        action_logits = [torch.empty(1, _.n) for _ in self.action_space]
+        for agent_i in range(self.num_agents):
+            x = getattr(self, 'agent_{}'.format(agent_i))(obs[:, agent_i, :]).unsqueeze(1)
+            action_logits[agent_i] = x
 
-    mu_loss = -q(s, mu(s)).mean()  # That's all for the policy loss.
-    mu_optimizer.zero_grad()
-    mu_loss.backward()
-    mu_optimizer.step()
+        return torch.cat(action_logits, dim=1)
+
+
+class QNet(nn.Module):
+    def __init__(self, observation_space, action_space):
+        super(QNet, self).__init__()
+        self.num_agents = len(observation_space)
+        total_obs = sum([_.shape[0] for _ in observation_space])
+        for agent_i in range(self.num_agents):
+            setattr(self, 'agent_{}'.format(agent_i), nn.Sequential(nn.Linear(total_obs + self.num_agents, 128),
+                                                                    nn.ReLU(),
+                                                                    nn.Linear(128, 64),
+                                                                    nn.ReLU(),
+                                                                    nn.Linear(64, 1)))
+
+    def forward(self, obs, action):
+        q_values = [torch.empty(obs.shape[0], )] * self.num_agents
+        x = torch.cat((obs.view(obs.shape[0], obs.shape[1] * obs.shape[2]), action), dim=1)
+        for agent_i in range(self.num_agents):
+            q_values[agent_i] = getattr(self, 'agent_{}'.format(agent_i))(x)
+
+        return torch.cat(q_values, dim=1)
 
 
 def soft_update(net, net_target, tau):
@@ -56,90 +87,100 @@ def soft_update(net, net_target, tau):
         param_target.data.copy_(param_target.data * (1.0 - tau) + param.data * tau)
 
 
-class MuNet(nn.Module):
-    def __init__(self):
-        super(MuNet, self).__init__()
-        self.fc1 = nn.Linear(3, 128)
-        self.fc2 = nn.Linear(128, 64)
-        self.fc_mu = nn.Linear(64, 1)
+def train(mu, mu_target, q, q_target, memory, q_optimizer, mu_optimizer, gamma, batch_size):
+    state, action, reward, next_state, done_mask = memory.sample(batch_size)
 
-    def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        mu = torch.tanh(self.fc_mu(x)) * 2  # Multipled by 2 because the action space of the Pendulum-v0 is [-2,2]
-        return mu
+    next_state_action_logits = mu_target(next_state)
+    _, n_agents, action_size = next_state_action_logits.shape
+    next_state_action_logits = next_state_action_logits.view(batch_size * n_agents, action_size)
+    next_state_action = F.gumbel_softmax(logits=next_state_action_logits, tau=0.1, hard=False).max(dim=1)[0]
+    next_state_action = next_state_action.view(batch_size, n_agents)
 
+    target = reward + gamma * q_target(next_state, next_state_action) * done_mask
+    q_loss = F.smooth_l1_loss(q(state, action), target.detach())
+    q_optimizer.zero_grad()
+    q_loss.backward()
+    q_optimizer.step()
 
-class QNet(nn.Module):
-    def __init__(self):
-        super(QNet, self).__init__()
-        self.fc_s = nn.Linear(3, 64)
-        self.fc_a = nn.Linear(1, 64)
-        self.fc_q = nn.Linear(128, 32)
-        self.fc_out = nn.Linear(32, 1)
+    state_action_logits = mu(state)
+    state_action_logits = state_action_logits.view(batch_size * n_agents, action_size)
+    state_action = F.gumbel_softmax(logits=state_action_logits, tau=0.1, hard=False).max(dim=1)[0]
+    state_action = state_action.view(batch_size, n_agents)
 
-    def forward(self, x, a):
-        h1 = F.relu(self.fc_s(x))
-        h2 = F.relu(self.fc_a(a))
-        cat = torch.cat([h1, h2], dim=1)
-        q = F.relu(self.fc_q(cat))
-        q = self.fc_out(q)
-        return q
+    mu_loss = -q(state, state_action).mean()  # That's all for the policy loss.
+    mu_optimizer.zero_grad()
+    mu_loss.backward()
+    mu_optimizer.step()
 
 
-class OrnsteinUhlenbeckNoise:
-    def __init__(self, mu):
-        self.theta, self.dt, self.sigma = 0.1, 0.01, 0.1
-        self.mu = mu
-        self.x_prev = np.zeros_like(self.mu)
+def test(env, num_episodes, mu):
+    score = np.zeros(env.n_agents)
+    for episode_i in range(num_episodes):
+        state = env.reset()
+        done = [False for _ in range(env.n_agents)]
 
-    def __call__(self):
-        x = self.x_prev + self.theta * (self.mu - self.x_prev) * self.dt + \
-            self.sigma * np.sqrt(self.dt) * np.random.normal(size=self.mu.shape)
-        self.x_prev = x
-        return x
+        while not all(done):
+            env.render()
+            action_logits = mu(torch.Tensor(state).unsqueeze(0))
+            action = action_logits.argmax(dim=2).squeeze(0).data.cpu().numpy().tolist()
+            next_state, reward, done, info = env.step(action)
+            score += np.array(reward)
+            state = next_state
+
+    return sum(score / num_episodes)
 
 
-def main(lr_mu, lr_q, tau):
-    env = gym.make('ma-gym:Switch2-v0')
+def main(env_name, lr_mu, lr_q, tau, gamma, batch_size):
+    env = gym.make(env_name)
+    test_env = gym.make(env_name)
     memory = ReplayBuffer(buffer_limit=50000)
 
-    q, q_target = QNet(), QNet()
+    q, q_target = QNet(env.observation_space, env.action_space), QNet(env.observation_space, env.action_space)
     q_target.load_state_dict(q.state_dict())
-    mu, mu_target = MuNet(), MuNet()
+    mu, mu_target = MuNet(env.observation_space, env.action_space), MuNet(env.observation_space, env.action_space)
     mu_target.load_state_dict(mu.state_dict())
 
-    score = 0.0
+    score = np.zeros(env.n_agents)
     log_interval = 20
 
     mu_optimizer = optim.Adam(mu.parameters(), lr=lr_mu)
     q_optimizer = optim.Adam(q.parameters(), lr=lr_q)
-    ou_noise = OrnsteinUhlenbeckNoise(mu=np.zeros(1))
 
-    for n_epi in range(10000):
-        s = env.reset()
-        done = False
+    for episode_i in range(10000):
+        state = env.reset()
+        done = [False for _ in range(env.n_agents)]
 
-        while not done:
-            a = mu(torch.from_numpy(s).float())
-            a = a.item() + ou_noise()[0]
-            s_prime, r, done, info = env.step([a])
-            memory.put((s, a, r / 100.0, s_prime, done))
-            score += r
-            s = s_prime
+        while not all(done):
+            env.render()
+            action_logits = mu(torch.Tensor(state).unsqueeze(0))
+            action_probs = F.gumbel_softmax(logits=action_logits.squeeze(0), tau=1, hard=False)
+            action = Categorical(probs=action_probs).sample().data.cpu().numpy().tolist()
+            next_state, reward, done, info = env.step(action)
+            memory.put((state, action, (np.array(reward)).tolist(), next_state,
+                        np.array(done, dtype=int).tolist()))
+            score += np.array(reward)
+            state = next_state
 
         if memory.size() > 2000:
             for i in range(10):
-                train(mu, mu_target, q, q_target, memory, q_optimizer, mu_optimizer)
+                train(mu, mu_target, q, q_target, memory, q_optimizer, mu_optimizer, gamma, batch_size)
                 soft_update(mu, mu_target, tau)
                 soft_update(q, q_target, tau)
 
-        if n_epi % log_interval == 0 and n_epi != 0:
-            print("# of episode :{}, avg score : {:.1f}".format(n_epi, score / log_interval))
-            score = 0.0
+        if episode_i % log_interval == 0 and episode_i != 0:
+            test_score = test(test_env, 5, mu)
+            print("# of episode :{}, avg train score : {:.1f}, "
+                  "test score: {:.1f} ".format(episode_i, sum(score / log_interval), test_score))
+            score = np.zeros(env.n_agents)
 
     env.close()
+    test_env.close()
 
 
 if __name__ == '__main__':
-    main(lr_mu=0.001, lr_q=0.001, tau=0.1)
+    main(env_name='ma_gym:Checkers-v0',
+         lr_mu=0.0005,
+         lr_q=0.001,
+         tau=0.005,
+         batch_size=32,
+         gamma=0.99)
