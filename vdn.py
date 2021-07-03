@@ -1,12 +1,14 @@
-import gym
 import collections
 import random
 
+import gym
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import numpy as np
+
+USE_WANDB = True  # if enabled, logs data on wandb server
 
 
 class ReplayBuffer:
@@ -88,7 +90,7 @@ def test(env, num_episodes, q):
     for episode_i in range(num_episodes):
         state = env.reset()
         done = [False for _ in range(env.n_agents)]
-
+        env.render()
         while not all(done):
             env.render()
             action = q.sample_action(torch.Tensor(state).unsqueeze(0), epsilon=0)
@@ -100,22 +102,21 @@ def test(env, num_episodes, q):
     return sum(score / num_episodes)
 
 
-def main(env_name, lr, gamma, batch_size):
+def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episodes):
     env = gym.make(env_name)
     test_env = gym.make(env_name)
-    memory = ReplayBuffer(buffer_limit=50000)
+    memory = ReplayBuffer(buffer_limit)
 
     q = QNet(env.observation_space, env.action_space)
     q_target = QNet(env.observation_space, env.action_space)
     q_target.load_state_dict(q.state_dict())
 
     score = np.zeros(env.n_agents)
-    log_interval = 20
 
     optimizer = optim.Adam(q.parameters(), lr=lr)
 
-    for episode_i in range(10000):
-        epsilon = max(0.1, 0.9 - 0.1 * (episode_i / 5000))  # Linear annealing
+    for episode_i in range(max_episodes):
+        epsilon = max(0.1, 0.9 - 0.8 * (episode_i / 400))  # Linear annealing
         state = env.reset()
         done = [False for _ in range(env.n_agents)]
         step_i = 0
@@ -146,6 +147,9 @@ def main(env_name, lr, gamma, batch_size):
                   "test score: {:.1f} n_buffer : {}, eps : {:.1f}%".format(episode_i,
                                                                            sum(score / log_interval), test_score,
                                                                            memory.size(), epsilon * 100))
+            if USE_WANDB:
+                wandb.log({'episode': episode_i, 'test-score': sum(score / log_interval),
+                           'buffer-size': memory.size(), 'epsilon': epsilon, 'train-score': sum(score / log_interval)})
             score = np.zeros(env.n_agents)
 
     env.close()
@@ -153,7 +157,16 @@ def main(env_name, lr, gamma, batch_size):
 
 
 if __name__ == '__main__':
-    main(env_name='ma_gym:Switch2-v1',
+    env_name = 'ma_gym:Checkers-v1'
+    if USE_WANDB:
+        import wandb
+
+        wandb.init(project='minimal-marl', config={'algo': 'vdn', 'env_name': env_name})
+
+    main(env_name=env_name,
          lr=0.0005,
          batch_size=32,
-         gamma=0.99)
+         gamma=0.99,
+         buffer_limit=50000,
+         log_interval=20,
+         max_episodes=1000)
