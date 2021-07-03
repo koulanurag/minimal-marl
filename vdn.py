@@ -114,19 +114,25 @@ def main(env_name, lr, gamma, batch_size):
 
     optimizer = optim.Adam(q.parameters(), lr=lr)
 
-    for episode_i in range(1000):
-        epsilon = max(0.1, 0.9 - 0.1 * (episode_i / 600))  # Linear annealing
+    for episode_i in range(10000):
+        epsilon = max(0.1, 0.9 - 0.1 * (episode_i / 5000))  # Linear annealing
         state = env.reset()
         done = [False for _ in range(env.n_agents)]
-
+        step_i = 0
         env.render()
         while not all(done):
             action = q.sample_action(torch.Tensor(state).unsqueeze(0), epsilon)
             action = action[0].data.cpu().numpy().tolist()
             next_state, reward, done, info = env.step(action)
+            step_i += 1
+            if step_i >= env._max_steps or (step_i < env._max_steps and not all(done)):
+                _done = [False for _ in done]
+            else:
+                _done = done
             memory.put((state, action, (np.array(reward)).tolist(), next_state,
-                        np.array(done, dtype=int).tolist()))
+                        np.array(_done, dtype=int).tolist()))
             score += np.array(reward)
+
             state = next_state
             env.render()
 
