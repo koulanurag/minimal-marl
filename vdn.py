@@ -114,8 +114,8 @@ def main(env_name, lr, gamma, batch_size):
 
     optimizer = optim.Adam(q.parameters(), lr=lr)
 
-    for episode_i in range(10000):
-        epsilon = max(0.01, 0.08 - 0.01 * (episode_i / 200))  # Linear annealing from 8% to 1%
+    for episode_i in range(1000):
+        epsilon = max(0.1, 0.9 - 0.1 * (episode_i / 600))  # Linear annealing
         state = env.reset()
         done = [False for _ in range(env.n_agents)]
 
@@ -147,7 +147,7 @@ def main(env_name, lr, gamma, batch_size):
 
 
 if __name__ == '__main__':
-    main(env_name='ma_gym:Switch2-v0',
+    main(env_name='ma_gym:Switch2-v1',
          lr=0.0005,
          batch_size=32,
          gamma=0.99)
