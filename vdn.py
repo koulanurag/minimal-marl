@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-USE_WANDB = True  # if enabled, logs data on wandb server
+USE_WANDB = False  # if enabled, logs data on wandb server
 
 
 class ReplayBuffer:
@@ -143,10 +143,9 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
         if episode_i % log_interval == 0 and episode_i != 0:
             q_target.load_state_dict(q.state_dict())
             test_score = test(test_env, 5, q)
-            print("# of episode :{}, avg train score : {:.1f}, "
-                  "test score: {:.1f} n_buffer : {}, eps : {:.1f}%".format(episode_i,
-                                                                           sum(score / log_interval), test_score,
-                                                                           memory.size(), epsilon * 100))
+            print("# of episode :{}, avg train score : {:.1f}, test score: {:.1f} "
+                  "n_buffer : {}, eps : {:.1f}%".format(episode_i, sum(score / log_interval), test_score,
+                                                        memory.size(), epsilon * 100))
             if USE_WANDB:
                 wandb.log({'episode': episode_i, 'test-score': sum(score / log_interval),
                            'buffer-size': memory.size(), 'epsilon': epsilon, 'train-score': sum(score / log_interval)})
