@@ -137,7 +137,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
             print("#{:<10}/{} episodes , avg train score : {:.1f}, test score: {:.1f} n_buffer : {}, eps : {:.1f}"
                   .format(episode_i, max_episodes, sum(score / log_interval), test_score, memory.size(), epsilon))
             if USE_WANDB:
-                wandb.log({'episode': episode_i, 'test-score': sum(score / log_interval),
+                wandb.log({'episode': episode_i, 'test-score': test_score,
                            'buffer-size': memory.size(), 'epsilon': epsilon, 'train-score': sum(score / log_interval)})
             score = np.zeros(env.n_agents)
 
