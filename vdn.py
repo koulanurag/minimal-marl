@@ -99,7 +99,7 @@ def test(env, num_episodes, q):
 
 
 def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval,
-         max_episodes, max_epsilon, min_epsilon, test_episodes, warm_up_steps):
+         max_episodes, max_epsilon, min_epsilon, test_episodes, warm_up_steps, update_iter):
     env = gym.make(env_name)
     test_env = gym.make(env_name)
     memory = ReplayBuffer(buffer_limit)
@@ -129,7 +129,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval,
             state = next_state
 
         if memory.size() > warm_up_steps:
-            train(q, q_target, memory, optimizer, gamma, batch_size)
+            train(q, q_target, memory, optimizer, gamma, batch_size, update_iter)
 
         if episode_i % log_interval == 0 and episode_i != 0:
             q_target.load_state_dict(q.state_dict())
@@ -156,7 +156,8 @@ if __name__ == '__main__':
               'max_epsilon': 0.9,
               'min_epsilon': 0.1,
               'test_episodes': 5,
-              'warm_up_steps': 2000}
+              'warm_up_steps': 2000,
+              'update_iter': 10}
     if USE_WANDB:
         import wandb
 
