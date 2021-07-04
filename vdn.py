@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-USE_WANDB = False  # if enabled, logs data on wandb server
+USE_WANDB = True  # if enabled, logs data on wandb server
 
 
 class ReplayBuffer:
@@ -77,7 +77,7 @@ def train(q, q_target, memory, optimizer, gamma, batch_size, update_iter=10):
         sum_q = q_a.sum(dim=1, keepdims=True)
         max_q_prime = q_target(s_prime).max(dim=2)[0].squeeze(-1)
         target = r.sum(dim=1, keepdims=True) + gamma * (max_q_prime * done_mask).sum(dim=1, keepdims=True)
-        loss = F.smooth_l1_loss(sum_q, target)
+        loss = F.smooth_l1_loss(sum_q, target.detach())
 
         optimizer.zero_grad()
         loss.backward()
@@ -134,7 +134,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval,
         if episode_i % log_interval == 0 and episode_i != 0:
             q_target.load_state_dict(q.state_dict())
             test_score = test(test_env, test_episodes, q)
-            print("#{:<10}/{} episodes , avg train score : {:.1f}, test score: {:.1f} n_buffer : {}, eps : {:.1f}%"
+            print("#{:<10}/{} episodes , avg train score : {:.1f}, test score: {:.1f} n_buffer : {}, eps : {:.1f}"
                   .format(episode_i, max_episodes, sum(score / log_interval), test_score, memory.size(), epsilon))
             if USE_WANDB:
                 wandb.log({'episode': episode_i, 'test-score': sum(score / log_interval),
@@ -146,7 +146,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval,
 
 
 if __name__ == '__main__':
-    env_name = 'ma_gym:Checkers-v1'
+    env_name = 'ma_gym:Switch2-v1'
     if USE_WANDB:
         import wandb
 
@@ -158,7 +158,7 @@ if __name__ == '__main__':
          gamma=0.99,
          buffer_limit=50000,
          log_interval=20,
-         max_episodes=1000,
+         max_episodes=10000,
          max_epsilon=0.9,
          min_epsilon=0.1,
          test_episodes=5,
