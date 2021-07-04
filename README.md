@@ -8,8 +8,13 @@ Minimal implementation of multi-agent reinforcement learning algorithms(marl). T
 
 ## Usage
 ```bash
-python <algo_name>.py # such as `maddpg.py`
+python <algo_name>.py # such as `vdn.py`
 ```
+
+## Algorithms
+
+- [x] VPN (Value Prediction Network)
+- [x] MADDPG (Multi Agent Deep Deterministic Policy Gradient)
 
 ## Contributing
 Contributions are always welcome! 
