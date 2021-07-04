@@ -8,6 +8,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.distributions import Categorical
 
+USE_WANDB = True  # if enabled, logs data on wandb server
+
 
 class ReplayBuffer:
     def __init__(self, buffer_limit):
@@ -140,10 +142,10 @@ def one_hot_action(action, action_space):
     return one_hot
 
 
-def main(env_name, lr_mu, lr_q, tau, gamma, batch_size):
+def main(env_name, lr_mu, lr_q, tau, gamma, batch_size, buffer_limit, max_episodes, log_interval):
     env = gym.make(env_name)
     test_env = gym.make(env_name)
-    memory = ReplayBuffer(buffer_limit=50000)
+    memory = ReplayBuffer(buffer_limit)
 
     q, q_target = QNet(env.observation_space, env.action_space), QNet(env.observation_space, env.action_space)
     q_target.load_state_dict(q.state_dict())
@@ -151,12 +153,11 @@ def main(env_name, lr_mu, lr_q, tau, gamma, batch_size):
     mu_target.load_state_dict(mu.state_dict())
 
     score = np.zeros(env.n_agents)
-    log_interval = 20
 
     mu_optimizer = optim.Adam(mu.parameters(), lr=lr_mu)
     q_optimizer = optim.Adam(q.parameters(), lr=lr_q)
 
-    for episode_i in range(10000):
+    for episode_i in range(max_episodes):
         state = env.reset()
         done = [False for _ in range(env.n_agents)]
         env.render()
@@ -181,6 +182,9 @@ def main(env_name, lr_mu, lr_q, tau, gamma, batch_size):
             test_score = test(test_env, 5, mu)
             print("# of episode :{}, avg train score : {:.1f}, "
                   "test score: {:.1f} ".format(episode_i, sum(score / log_interval), test_score))
+            if USE_WANDB:
+                wandb.log({'episode': episode_i, 'test-score': sum(score / log_interval),
+                           'buffer-size': memory.size(), 'train-score': sum(score / log_interval)})
             score = np.zeros(env.n_agents)
 
     env.close()
@@ -188,9 +192,21 @@ def main(env_name, lr_mu, lr_q, tau, gamma, batch_size):
 
 
 if __name__ == '__main__':
-    main(env_name='ma_gym:Switch2-v0',
-         lr_mu=0.0005,
-         lr_q=0.001,
-         tau=0.005,
-         batch_size=32,
-         gamma=0.99)
+    kwargs = {'env_name': 'ma_gym:Switch2-v1',
+              'lr_mu': 0.0005,
+              'lr_q': 0.001,
+              'batch_size': 32,
+              'tau': 0.005,
+              'gamma': 0.99,
+              'buffer_limit': 50000,
+              'log_interval': 20,
+              'max_episodes': 10000,
+              'test_episodes': 5,
+              'warm_up_steps': 2000,
+              'update_iter': 10}
+    if USE_WANDB:
+        import wandb
+
+        wandb.init(project='minimal-marl', config={'algo': 'maddpg', **kwargs})
+
+    main(**kwargs)
