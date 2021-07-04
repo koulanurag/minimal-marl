@@ -102,7 +102,7 @@ def test(env, num_episodes, q):
     return sum(score / num_episodes)
 
 
-def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episodes):
+def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episodes, max_epsilon, min_epsilon):
     env = gym.make(env_name)
     test_env = gym.make(env_name)
     memory = ReplayBuffer(buffer_limit)
@@ -110,20 +110,17 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
     q = QNet(env.observation_space, env.action_space)
     q_target = QNet(env.observation_space, env.action_space)
     q_target.load_state_dict(q.state_dict())
-
-    score = np.zeros(env.n_agents)
-
     optimizer = optim.Adam(q.parameters(), lr=lr)
 
+    score = np.zeros(env.n_agents)
     for episode_i in range(max_episodes):
-        epsilon = max(0.1, 0.9 - 0.8 * (episode_i / 400))  # Linear annealing
+        epsilon = max(min_epsilon, max_epsilon - (max_epsilon - min_epsilon) * (episode_i / 400))  # Linear annealing
         state = env.reset()
         done = [False for _ in range(env.n_agents)]
         step_i = 0
         env.render()
         while not all(done):
-            action = q.sample_action(torch.Tensor(state).unsqueeze(0), epsilon)
-            action = action[0].data.cpu().numpy().tolist()
+            action = q.sample_action(torch.Tensor(state).unsqueeze(0), epsilon)[0].data.cpu().numpy().tolist()
             next_state, reward, done, info = env.step(action)
             step_i += 1
             if step_i >= env._max_steps or (step_i < env._max_steps and not all(done)):
@@ -168,4 +165,6 @@ if __name__ == '__main__':
          gamma=0.99,
          buffer_limit=50000,
          log_interval=20,
-         max_episodes=1000)
+         max_episodes=1000,
+         max_epsilon=0.9,
+         min_epsilon=0.1)
