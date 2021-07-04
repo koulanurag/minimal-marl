@@ -98,8 +98,8 @@ def test(env, num_episodes, q):
     return sum(score / num_episodes)
 
 
-def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval,
-         max_episodes, max_epsilon, min_epsilon, test_episodes, warm_up_steps, update_iter):
+def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episodes,
+         max_epsilon, min_epsilon, test_episodes, warm_up_steps, update_iter):
     env = gym.make(env_name)
     test_env = gym.make(env_name)
     memory = ReplayBuffer(buffer_limit)
