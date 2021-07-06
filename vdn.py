@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from ma_gym.wrappers import Monitor
 
 USE_WANDB = True  # if enabled, logs data on wandb server
 
@@ -102,6 +103,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
          max_epsilon, min_epsilon, test_episodes, warm_up_steps, update_iter):
     env = gym.make(env_name)
     test_env = gym.make(env_name)
+    test_env = Monitor(test_env, directory='recordings', video_callable=lambda episode_id: episode_id % 50 == 0)
     memory = ReplayBuffer(buffer_limit)
 
     q = QNet(env.observation_space, env.action_space)
@@ -161,6 +163,6 @@ if __name__ == '__main__':
     if USE_WANDB:
         import wandb
 
-        wandb.init(project='minimal-marl', config={'algo': 'vdn', **kwargs})
+        wandb.init(project='minimal-marl', config={'algo': 'vdn', **kwargs}, monitor_gym=True)
 
     main(**kwargs)
