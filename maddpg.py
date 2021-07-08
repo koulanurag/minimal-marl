@@ -167,13 +167,19 @@ def main(env_name, lr_mu, lr_q, tau, gamma, batch_size, buffer_limit, max_episod
         state = env.reset()
         done = [False for _ in range(env.n_agents)]
         env.render()
+        step_i = 0
         while not all(done):
             action_logits = mu(torch.Tensor(state).unsqueeze(0))
             action_probs = F.gumbel_softmax(logits=action_logits.squeeze(0), tau=temperature, hard=False)
             action = Categorical(probs=action_probs).sample().data.cpu().numpy().tolist()
             next_state, reward, done, info = env.step(action)
+            step_i += 1
+            if step_i >= env._max_steps or (step_i < env._max_steps and not all(done)):
+                _done = [False for _ in done]
+            else:
+                _done = done
             memory.put((state, one_hot_action(action, env.action_space), (np.array(reward)).tolist(), next_state,
-                        np.array(done, dtype=int).tolist()))
+                        np.array(_done, dtype=int).tolist()))
             score += np.array(reward)
             state = next_state
             env.render()
