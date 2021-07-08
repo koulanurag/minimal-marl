@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.distributions import Categorical
+from ma_gym.wrappers import Monitor
 
 USE_WANDB = True  # if enabled, logs data on wandb server
 
@@ -143,9 +144,11 @@ def one_hot_action(action, action_space):
 
 
 def main(env_name, lr_mu, lr_q, tau, gamma, batch_size, buffer_limit, max_episodes, log_interval, test_episodes,
-         warm_up_steps, update_iter):
+         warm_up_steps, update_iter, gumbel_max_temp, gumbel_min_temp):
     env = gym.make(env_name)
     test_env = gym.make(env_name)
+    test_env = Monitor(test_env, directory='recordings',
+                       video_callable=lambda episode_id: episode_id % test_episodes == 0)
     memory = ReplayBuffer(buffer_limit)
 
     q, q_target = QNet(env.observation_space, env.action_space), QNet(env.observation_space, env.action_space)
@@ -159,12 +162,14 @@ def main(env_name, lr_mu, lr_q, tau, gamma, batch_size, buffer_limit, max_episod
     q_optimizer = optim.Adam(q.parameters(), lr=lr_q)
 
     for episode_i in range(max_episodes):
+        temperature = max(gumbel_min_temp,
+                          gumbel_max_temp - (gumbel_max_temp - gumbel_min_temp) * (episode_i / (0.4 * max_episodes)))
         state = env.reset()
         done = [False for _ in range(env.n_agents)]
         env.render()
         while not all(done):
             action_logits = mu(torch.Tensor(state).unsqueeze(0))
-            action_probs = F.gumbel_softmax(logits=action_logits.squeeze(0), tau=1, hard=False)
+            action_probs = F.gumbel_softmax(logits=action_logits.squeeze(0), tau=temperature, hard=False)
             action = Categorical(probs=action_probs).sample().data.cpu().numpy().tolist()
             next_state, reward, done, info = env.step(action)
             memory.put((state, one_hot_action(action, env.action_space), (np.array(reward)).tolist(), next_state,
@@ -184,7 +189,7 @@ def main(env_name, lr_mu, lr_q, tau, gamma, batch_size, buffer_limit, max_episod
             print("#{:<10}/{} episodes , avg train score : {:.1f}, test score: {:.1f} n_buffer : {}"
                   .format(episode_i, max_episodes, sum(score / log_interval), test_score, memory.size()))
             if USE_WANDB:
-                wandb.log({'episode': episode_i, 'test-score': test_score,
+                wandb.log({'episode': episode_i, 'test-score': test_score, 'gumbel_temperature': temperature,
                            'buffer-size': memory.size(), 'train-score': sum(score / log_interval)})
             score = np.zeros(env.n_agents)
 
@@ -204,7 +209,9 @@ if __name__ == '__main__':
               'max_episodes': 10000,
               'test_episodes': 5,
               'warm_up_steps': 2000,
-              'update_iter': 10}
+              'update_iter': 10,
+              'gumbel_max_temp': 0.9,
+              'gumbel_min_temp': 0.1}
     if USE_WANDB:
         import wandb
 
