@@ -3,9 +3,9 @@
 Minimal implementation of multi-agent reinforcement learning algorithms(marl). This repo
 complements [`ma-gym`](https://github.com/koulanurag/ma-gym) and is is inspired
 by [`minimalRl`](https://github.com/seungeunrho/minimalRL) which provides minimal implementation for RL algorithms for
-the sake of understanding. I couldn't find the same for  `multi-agent` environments and thereby created it.
+the ease of understanding.
 
-You can find training results over [**here**](https://wandb.ai/koulanurag/minimal-marl/reports/Minimal-Marl--Vmlldzo4MzM2MDc?accessToken=vy6dydemfdvekct02pevp3girjvb0tnt1ou2acb2h0fl478hdjqqu8ydbco6uz38)
+You can find training results over [**HERE**](https://wandb.ai/koulanurag/minimal-marl/reports/Minimal-Marl--Vmlldzo4MzM2MDc?accessToken=vy6dydemfdvekct02pevp3girjvb0tnt1ou2acb2h0fl478hdjqqu8ydbco6uz38).
 
 ## Installation
 
@@ -21,8 +21,9 @@ python <algo_name>.py # such as `vdn.py`
 
 ## Algorithms
 
-- [x] VDN (Value Decomposition Network)
-- [x] MADDPG (Multi Agent Deep Deterministic Policy Gradient)
+- [x] VDN (Value Decomposition Network) _[centralized training and centralized execution]_
+- [x] MADDPG (Multi Agent Deep Deterministic Policy Gradient) _(centralized training and decentralized execution)_
+- [ ] QMIX
 
 ## Contributing
 
