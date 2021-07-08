@@ -142,7 +142,8 @@ def one_hot_action(action, action_space):
     return one_hot
 
 
-def main(env_name, lr_mu, lr_q, tau, gamma, batch_size, buffer_limit, max_episodes, log_interval):
+def main(env_name, lr_mu, lr_q, tau, gamma, batch_size, buffer_limit, max_episodes, log_interval, test_episodes,
+         warm_up_steps, update_iter):
     env = gym.make(env_name)
     test_env = gym.make(env_name)
     memory = ReplayBuffer(buffer_limit)
@@ -172,18 +173,18 @@ def main(env_name, lr_mu, lr_q, tau, gamma, batch_size, buffer_limit, max_episod
             state = next_state
             env.render()
 
-        if memory.size() > 2000:
-            for i in range(10):
+        if memory.size() > warm_up_steps:
+            for i in range(update_iter):
                 train(mu, mu_target, q, q_target, memory, q_optimizer, mu_optimizer, gamma, batch_size)
                 soft_update(mu, mu_target, tau)
                 soft_update(q, q_target, tau)
 
         if episode_i % log_interval == 0 and episode_i != 0:
-            test_score = test(test_env, 5, mu)
-            print("# of episode :{}, avg train score : {:.1f}, "
-                  "test score: {:.1f} ".format(episode_i, sum(score / log_interval), test_score))
+            test_score = test(test_env, test_episodes, mu)
+            print("#{:<10}/{} episodes , avg train score : {:.1f}, test score: {:.1f} n_buffer : {}"
+                  .format(episode_i, max_episodes, sum(score / log_interval), test_score, memory.size()))
             if USE_WANDB:
-                wandb.log({'episode': episode_i, 'test-score': sum(score / log_interval),
+                wandb.log({'episode': episode_i, 'test-score': test_score,
                            'buffer-size': memory.size(), 'train-score': sum(score / log_interval)})
             score = np.zeros(env.n_agents)
 
@@ -192,7 +193,7 @@ def main(env_name, lr_mu, lr_q, tau, gamma, batch_size, buffer_limit, max_episod
 
 
 if __name__ == '__main__':
-    kwargs = {'env_name': 'ma_gym:Switch2-v1',
+    kwargs = {'env_name': 'ma_gym:Switch2-v0',
               'lr_mu': 0.0005,
               'lr_q': 0.001,
               'batch_size': 32,
