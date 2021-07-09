@@ -21,10 +21,12 @@ python <algo_name>.py # such as `vdn.py`
 
 ## Algorithms
 
-- [ ] IQL ( Independent Q Learning)
-- [x] VDN (Value Decomposition Network) _[centralized training and centralized execution]_
-- [ ] MADDPG (Multi Agent Deep Deterministic Policy Gradient) _(centralized training and decentralized execution)_
-- [x] QMIX
+- [x] IDQN ( Independent Deep-Q
+  Network) [DQN version of [IQL](https://web.media.mit.edu/~cynthiab/Readings/tan-MAS-reinfLearn.pdf)]
+- [x] [VDN](https://arxiv.org/abs/1706.05296) (Value Decomposition Network)
+- [x] [QMIX](https://arxiv.org/pdf/1803.11485.pdf)
+- [ ] [MADDPG](https://arxiv.org/abs/1706.02275) (Multi Agent Deep Deterministic Policy Gradient)
+    - `Status: Not converging at the moment`
 
 ## Contributing
 
