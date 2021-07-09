@@ -99,11 +99,12 @@ def test(env, num_episodes, q):
 
 
 def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episodes,
-         max_epsilon, min_epsilon, test_episodes, warm_up_steps, update_iter):
+         max_epsilon, min_epsilon, test_episodes, warm_up_steps, update_iter, monitor=False):
     env = gym.make(env_name)
     test_env = gym.make(env_name)
-    test_env = Monitor(test_env, directory='recordings/idqn/{}'.format(env_name),
-                       video_callable=lambda episode_id: episode_id % 50 == 0)
+    if monitor:
+        test_env = Monitor(test_env, directory='recordings/qmix/{}'.format(env_name),
+                           video_callable=lambda episode_id: episode_id % 50 == 0)
     memory = ReplayBuffer(buffer_limit)
 
     q = QNet(env.observation_space, env.action_space)
@@ -148,7 +149,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
 
 
 if __name__ == '__main__':
-    kwargs = {'env_name': 'ma_gym:Switch2-v1',
+    kwargs = {'env_name': 'ma_gym:Switch2Clock-v0',
               'lr': 0.0005,
               'batch_size': 32,
               'gamma': 0.99,
@@ -159,7 +160,8 @@ if __name__ == '__main__':
               'min_epsilon': 0.1,
               'test_episodes': 5,
               'warm_up_steps': 2000,
-              'update_iter': 10}
+              'update_iter': 10,
+              'monitor': False}
     if USE_WANDB:
         import wandb
 
