@@ -125,7 +125,7 @@ def test(env, num_episodes, mu):
         done = [False for _ in range(env.n_agents)]
 
         while not all(done):
-            env.render()
+            # env.render()
             action_logits = mu(torch.Tensor(state).unsqueeze(0))
             action = action_logits.argmax(dim=2).squeeze(0).data.cpu().numpy().tolist()
             next_state, reward, done, info = env.step(action)
@@ -139,8 +139,8 @@ def main(env_name, lr_mu, lr_q, tau, gamma, batch_size, buffer_limit, max_episod
          warm_up_steps, update_iter, gumbel_max_temp, gumbel_min_temp):
     env = gym.make(env_name)
     test_env = gym.make(env_name)
-    test_env = Monitor(test_env, directory='recordings',
-                       video_callable=lambda episode_id: episode_id % test_episodes == 0)
+    # test_env = Monitor(test_env, directory='recordings',
+    #                   video_callable=lambda episode_id: episode_id % test_episodes == 0)
     memory = ReplayBuffer(buffer_limit)
 
     q, q_target = QNet(env.observation_space, env.action_space), QNet(env.observation_space, env.action_space)
@@ -155,10 +155,10 @@ def main(env_name, lr_mu, lr_q, tau, gamma, batch_size, buffer_limit, max_episod
 
     for episode_i in range(max_episodes):
         temperature = max(gumbel_min_temp,
-                          gumbel_max_temp - (gumbel_max_temp - gumbel_min_temp) * (episode_i / (0.4 * max_episodes)))
+                          gumbel_max_temp - (gumbel_max_temp - gumbel_min_temp) * (episode_i / (0.6 * max_episodes)))
         state = env.reset()
         done = [False for _ in range(env.n_agents)]
-        env.render()
+        # env.render()
         step_i = 0
         while not all(done):
             action_logits = mu(torch.Tensor(state).unsqueeze(0))
@@ -174,7 +174,7 @@ def main(env_name, lr_mu, lr_q, tau, gamma, batch_size, buffer_limit, max_episod
                         np.array(_done, dtype=int).tolist()))
             score += np.array(reward)
             state = next_state
-            env.render()
+            # env.render()
 
         if memory.size() > warm_up_steps:
             for i in range(update_iter):
@@ -196,7 +196,7 @@ def main(env_name, lr_mu, lr_q, tau, gamma, batch_size, buffer_limit, max_episod
 
 
 if __name__ == '__main__':
-    kwargs = {'env_name': 'ma_gym:Switch2-v0',
+    kwargs = {'env_name': 'ma_gym:Switch2-v1',
               'lr_mu': 0.0005,
               'lr_q': 0.001,
               'batch_size': 32,
