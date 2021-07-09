@@ -21,10 +21,13 @@ python <algo_name>.py # such as `vdn.py`
 
 ## Algorithms
 
-- [ ] IQL ( Independent Q Learning) _[decentralized training and decentralized execution]_
+- [ ] IQL ( Independent Q Learning) 
+  - Decentralized training and Decentralized execution
+  - It does not address the non-stationarity introduced due to the changing policies of the learning agents, and thus, unlike Q-learning, has no convergence guarantees even in the limit of infinite exploration.
 - [x] VDN (Value Decomposition Network) _[centralized training and centralized execution]_
-- [x] MADDPG (Multi Agent Deep Deterministic Policy Gradient) _(centralized training and decentralized execution)_
+- [ ] MADDPG (Multi Agent Deep Deterministic Policy Gradient) _(centralized training and decentralized execution)_
 - [ ] QMIX
+  - Lies between the extremes of IQL and centralised Q-learning, but can represent a much richer class of action-value functions
 
 ## Contributing
 
