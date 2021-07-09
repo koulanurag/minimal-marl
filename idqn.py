@@ -74,11 +74,10 @@ def train(q, q_target, memory, optimizer, gamma, batch_size, update_iter=10):
         s, a, r, s_prime, done_mask = memory.sample(batch_size)
 
         q_out = q(s)
-        q_a = q_out.gather(2, a.unsqueeze(-1).long())
-        max_q_prime = q_target(s_prime)
-        target = r
-        target = r.sum(dim=1, keepdims=True) + gamma * (max_q_prime * done_mask).sum(dim=1, keepdims=True)
-        loss = F.smooth_l1_loss(sum_q, target.detach())
+        q_a = q_out.gather(2, a.unsqueeze(-1).long()).squeeze(-1)
+        max_q_prime = q_target(s_prime).max(dim=2)[0]
+        target = r + gamma * max_q_prime * done_mask
+        loss = F.smooth_l1_loss(q_a, target.detach())
 
         optimizer.zero_grad()
         loss.backward()
