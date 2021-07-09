@@ -6,7 +6,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.distributions import Categorical
 from ma_gym.wrappers import Monitor
 
 USE_WANDB = True  # if enabled, logs data on wandb server
@@ -136,13 +135,6 @@ def test(env, num_episodes, mu):
     return sum(score / num_episodes)
 
 
-def one_hot_action(action, action_space):
-    one_hot = [[0 for _ in range(_.n)] for _ in action_space]
-    for action_i, action in enumerate(action):
-        one_hot[action_i][action] = 1
-    return one_hot
-
-
 def main(env_name, lr_mu, lr_q, tau, gamma, batch_size, buffer_limit, max_episodes, log_interval, test_episodes,
          warm_up_steps, update_iter, gumbel_max_temp, gumbel_min_temp):
     env = gym.make(env_name)
@@ -170,15 +162,15 @@ def main(env_name, lr_mu, lr_q, tau, gamma, batch_size, buffer_limit, max_episod
         step_i = 0
         while not all(done):
             action_logits = mu(torch.Tensor(state).unsqueeze(0))
-            action_probs = F.gumbel_softmax(logits=action_logits.squeeze(0), tau=temperature, hard=False)
-            action = Categorical(probs=action_probs).sample().data.cpu().numpy().tolist()
+            action_one_hot = F.gumbel_softmax(logits=action_logits.squeeze(0), tau=temperature, hard=True)
+            action = torch.argmax(action_one_hot, dim=1).data.numpy()
             next_state, reward, done, info = env.step(action)
             step_i += 1
             if step_i >= env._max_steps or (step_i < env._max_steps and not all(done)):
                 _done = [False for _ in done]
             else:
                 _done = done
-            memory.put((state, one_hot_action(action, env.action_space), (np.array(reward)).tolist(), next_state,
+            memory.put((state, action_one_hot.data.numpy(), (np.array(reward)).tolist(), next_state,
                         np.array(_done, dtype=int).tolist()))
             score += np.array(reward)
             state = next_state
@@ -216,11 +208,11 @@ if __name__ == '__main__':
               'test_episodes': 5,
               'warm_up_steps': 2000,
               'update_iter': 10,
-              'gumbel_max_temp': 0.9,
+              'gumbel_max_temp': 10,
               'gumbel_min_temp': 0.1}
     if USE_WANDB:
         import wandb
 
-        wandb.init(project='minimal-marl', config={'algo': 'maddpg', **kwargs})
+        wandb.init(project='minimal-marl', config={'algo': 'maddpg', **kwargs, }, monitor_gym=True)
 
     main(**kwargs)
