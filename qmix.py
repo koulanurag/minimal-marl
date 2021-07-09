@@ -51,7 +51,8 @@ class MixNet(nn.Module):
         self.fc2 = nn.Linear(128 + state_size, 64, bias=False)
         self.fc3 = nn.Linear(64 + state_size, 1, bias=False)
 
-    def forward(self, q_values, state):
+    def forward(self, q_values, observations):
+        state = observations.view(observations.shape[0], np.prod(observations.shape[1:]))
         x = torch.relu(self.fc1(torch.cat((q_values, state), dim=1)))
         x = torch.relu(self.fc2(torch.cat((x, state), dim=1)))
         x = self.fc3(torch.cat((x, state), dim=1))
@@ -93,7 +94,7 @@ def train(q, q_target, mix_net, mix_net_target, memory, optimizer, gamma, batch_
         q_out = q(s)
         q_a = q_out.gather(2, a.unsqueeze(-1).long()).squeeze(-1)
         pred_q = mix_net(q_a, s)
-        max_q_prime = q_target(s_prime).max(dim=2)[0].squeeze(-1)
+        max_q_prime = q_target(s_prime).max(dim=2)[0]
         target_q = r.sum(dim=1, keepdims=True) + gamma * mix_net_target(max_q_prime * done_mask, s_prime)
         loss = F.smooth_l1_loss(pred_q, target_q.detach())
         optimizer.zero_grad()
@@ -119,7 +120,8 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
          max_epsilon, min_epsilon, test_episodes, warm_up_steps, update_iter):
     env = gym.make(env_name)
     test_env = gym.make(env_name)
-    test_env = Monitor(test_env, directory='recordings', video_callable=lambda episode_id: episode_id % 50 == 0)
+    test_env = Monitor(test_env, directory='recordings/qmix/{}'.format(env_name),
+                       video_callable=lambda episode_id: episode_id % 50 == 0)
     memory = ReplayBuffer(buffer_limit)
 
     q = QNet(env.observation_space, env.action_space)
@@ -128,9 +130,9 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
 
     mix_net = MixNet(env.observation_space, env.action_space)
     mix_net_target = MixNet(env.observation_space, env.action_space)
-    mix_net_target.load_state_dict(q.state_dict(mix_net))
+    mix_net_target.load_state_dict(mix_net.state_dict())
 
-    optimizer = optim.Adam(q.parameters(), lr=lr)
+    optimizer = optim.Adam([{'params': q.parameters()}, {'params': mix_net.parameters()}], lr=lr)
 
     score = np.zeros(env.n_agents)
     for episode_i in range(max_episodes):
@@ -170,13 +172,13 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
 
 
 if __name__ == '__main__':
-    kwargs = {'env_name': 'ma_gym:Switch2-v1',
+    kwargs = {'env_name': 'ma_gym:Switch2Clock-v0',
               'lr': 0.0005,
               'batch_size': 32,
               'gamma': 0.99,
               'buffer_limit': 50000,
               'log_interval': 20,
-              'max_episodes': 10000,
+              'max_episodes': 20000,
               'max_epsilon': 0.9,
               'min_epsilon': 0.1,
               'test_episodes': 5,
