@@ -163,6 +163,6 @@ if __name__ == '__main__':
     if USE_WANDB:
         import wandb
 
-        wandb.init(project='minimal-marl', config={'algo': 'vdn', **kwargs}, monitor_gym=True)
+        wandb.init(project='minimal-marl', config={'algo': 'idqn', **kwargs}, monitor_gym=True)
 
     main(**kwargs)
