@@ -31,8 +31,5 @@ python <algo_name>.py # such as `vdn.py`
 Contributions are always welcome!
 
 Feel free to send a `pull-request` if you would like to add a new algorithm or further optimize an existing algorithm.
-Also, If adding a new algorithm, please start by raising an `issue` and
-use [`ma-gym`](https://github.com/koulanurag/ma-gym) or
-[`PettingZoo`](https://github.com/PettingZoo-Team/PettingZoo) for testing.
-
+Also, If adding a new algorithm, please start by raising an `issue`.
 
