@@ -159,7 +159,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
         if episode_i % update_target_interval:
             q_target.load_state_dict(q.state_dict())
 
-        if episode_i % log_interval == 0 and episode_i != 0:
+        if (episode_i+1) % log_interval == 0:
             test_score = test(test_env, test_episodes, q)
             train_score = sum(score / log_interval)
             print("#{:<10}/{} episodes , avg train score : {:.1f}, test score: {:.1f} n_buffer : {}, eps : {:.1f}"
@@ -189,7 +189,7 @@ if __name__ == '__main__':
               'update_iter': 10,
               'chunk_size': 10,
               'recurrent': True,  # if disabled, internally, we use chunk_size of 1 and no gru cell is used.
-              'monitor': False}
+              'monitor': True}
 
     if USE_WANDB:
         import wandb
