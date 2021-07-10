@@ -19,24 +19,6 @@ class ReplayBuffer:
     def put(self, transition):
         self.buffer.append(transition)
 
-    def sample(self, n):
-        mini_batch = random.sample(self.buffer, n)
-        s_lst, a_lst, r_lst, s_prime_lst, done_mask_lst = [], [], [], [], []
-
-        for transition in mini_batch:
-            s, a, r, s_prime, done = transition
-            s_lst.append(s)
-            a_lst.append(a)
-            r_lst.append(r)
-            s_prime_lst.append(s_prime)
-            done_mask_lst.append((np.ones(len(done)) - done).tolist())
-
-        return torch.tensor(s_lst, dtype=torch.float), \
-               torch.tensor(a_lst, dtype=torch.float), \
-               torch.tensor(r_lst, dtype=torch.float), \
-               torch.tensor(s_prime_lst, dtype=torch.float), \
-               torch.tensor(done_mask_lst, dtype=torch.float)
-
     def sample_chunk(self, batch_size, chunk_size):
         start_idx = np.random.randint(0, len(self.buffer) - chunk_size, batch_size)
         s_lst, a_lst, r_lst, s_prime_lst, done_lst = [], [], [], [], []
@@ -66,15 +48,16 @@ class QNet(nn.Module):
         super(QNet, self).__init__()
         self.num_agents = len(observation_space)
         self.recurrent = recurrent
+        self.hx_size = 64
         for agent_i in range(self.num_agents):
             n_obs = observation_space[agent_i].shape[0]
             setattr(self, 'agent_feature_{}'.format(agent_i), nn.Sequential(nn.Linear(n_obs, 128),
                                                                             nn.ReLU(),
-                                                                            nn.Linear(128, 64),
+                                                                            nn.Linear(128, self.hx_size),
                                                                             nn.ReLU()))
             if recurrent:
-                setattr(self, 'agent_gru_{}'.format(agent_i), nn.GRUCell(64, 64))
-            setattr(self, 'agent_q_{}'.format(agent_i), nn.Linear(64, action_space[agent_i].n))
+                setattr(self, 'agent_gru_{}'.format(agent_i), nn.GRUCell(self.hx_size, self.hx_size))
+            setattr(self, 'agent_q_{}'.format(agent_i), nn.Linear(self.hx_size, action_space[agent_i].n))
 
     def forward(self, obs, hidden):
         q_values = [torch.empty(obs.shape[0], )] * self.num_agents
@@ -97,26 +80,27 @@ class QNet(nn.Module):
         return action, hidden
 
     def init_hidden(self, batch_size=1):
-        return torch.zeros((batch_size, self.num_agents, 64))
+        return torch.zeros((batch_size, self.num_agents, self.hx_size))
 
 
 def train(q, q_target, memory, optimizer, gamma, batch_size, update_iter=10, chunk_size=10):
+    _chunk_size = chunk_size if q.recurrent else 1
     for _ in range(update_iter):
-        s, a, r, s_prime, done = memory.sample_chunk(batch_size, chunk_size)
+        s, a, r, s_prime, done = memory.sample_chunk(batch_size, _chunk_size)
 
         hidden = q.init_hidden(batch_size)
         loss = 0
-        for step_i in range(chunk_size):
+        for step_i in range(_chunk_size):
             q_out, hidden = q(s[:, step_i, :, :], hidden)
             q_a = q_out.gather(2, a[:, step_i, :].unsqueeze(-1).long()).squeeze(-1)
             sum_q = q_a.sum(dim=1, keepdims=True)
             max_q_prime, _ = q_target(s_prime[:, step_i, :, :], hidden.detach())
             max_q_prime = max_q_prime.max(dim=2)[0].squeeze(-1)
-            target = r[:, step_i, :].sum(dim=1, keepdims=True) + \
-                     gamma * (max_q_prime).sum(dim=1, keepdims=True) * (1 - done[:, step_i])
+            target = r[:, step_i, :].sum(dim=1, keepdims=True)
+            target += gamma * max_q_prime.sum(dim=1, keepdims=True) * (1 - done[:, step_i])
             loss += F.smooth_l1_loss(sum_q, target.detach())
-            hidden[done[:, step_i].squeeze(-1).bool()] = q.init_hidden(
-                len(hidden[done[:, step_i].squeeze(-1).bool()]))
+            done_mask = done[:, step_i].squeeze(-1).bool()
+            hidden[done_mask] = q.init_hidden(len(hidden[done_mask]))
 
         optimizer.zero_grad()
         loss.backward()
@@ -204,8 +188,9 @@ if __name__ == '__main__':
               'warm_up_steps': 2000,
               'update_iter': 10,
               'chunk_size': 10,
-              'recurrent': True,
+              'recurrent': True,  # if disabled, internally, we use chunk_size of 1 and no gru cell is used.
               'monitor': False}
+
     if USE_WANDB:
         import wandb
 
