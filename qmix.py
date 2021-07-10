@@ -156,8 +156,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
             action = q.sample_action(torch.Tensor(state).unsqueeze(0), epsilon)[0].data.cpu().numpy().tolist()
             next_state, reward, done, info = env.step(action)
             step_i += 1
-            memory.put((state, action, (np.array(reward)).tolist(), next_state,
-                        np.array([all(done)], dtype=int).tolist()))
+            memory.put((state, action, (np.array(reward)).tolist(), next_state, [int(all(done))]))
             score += np.array(reward)
 
             state = next_state

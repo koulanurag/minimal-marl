@@ -117,18 +117,11 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
         epsilon = max(min_epsilon, max_epsilon - (max_epsilon - min_epsilon) * (episode_i / (0.4 * max_episodes)))
         state = env.reset()
         done = [False for _ in range(env.n_agents)]
-        step_i = 0
         while not all(done):
             action = q.sample_action(torch.Tensor(state).unsqueeze(0), epsilon)[0].data.cpu().numpy().tolist()
             next_state, reward, done, info = env.step(action)
-            step_i += 1
-            if step_i >= env._max_steps or (step_i < env._max_steps and not all(done)):
-                _done = [False for _ in done]
-            else:
-                _done = done
-            memory.put((state, action, (np.array(reward)).tolist(), next_state, np.array(_done, dtype=int).tolist()))
+            memory.put((state, action, (np.array(reward)).tolist(), next_state, np.array(done, dtype=int).tolist()))
             score += np.array(reward)
-
             state = next_state
 
         if memory.size() > warm_up_steps:
@@ -155,7 +148,7 @@ if __name__ == '__main__':
               'gamma': 0.99,
               'buffer_limit': 50000,
               'log_interval': 20,
-              'max_episodes': 10000,
+              'max_episodes': 20000,
               'max_epsilon': 0.9,
               'min_epsilon': 0.1,
               'test_episodes': 5,
