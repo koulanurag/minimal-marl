@@ -1,5 +1,4 @@
 import collections
-import random
 
 import gym
 import numpy as np
@@ -9,7 +8,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from ma_gym.wrappers import Monitor
 
-USE_WANDB = False  # if enabled, logs data on wandb server
+USE_WANDB = True  # if enabled, logs data on wandb server
 
 
 class ReplayBuffer:
@@ -175,7 +174,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
 
 
 if __name__ == '__main__':
-    kwargs = {'env_name': 'ma_gym:Switch2-v0',
+    kwargs = {'env_name': 'ma_gym:Switch4-v0',
               'lr': 0.0005,
               'batch_size': 32,
               'gamma': 0.99,
