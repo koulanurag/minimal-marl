@@ -104,7 +104,7 @@ def train(q, q_target, memory, optimizer, gamma, batch_size, update_iter=10, chu
 
         optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(optimizer.parameters(), grad_clip_norm, norm_type=2)
+        torch.nn.utils.clip_grad_norm_(q.parameters(), grad_clip_norm, norm_type=2)
         optimizer.step()
 
 
