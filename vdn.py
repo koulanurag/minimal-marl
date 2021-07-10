@@ -129,7 +129,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
     env = gym.make(env_name)
     test_env = gym.make(env_name)
     if monitor:
-        test_env = Monitor(test_env, directory='recordings/vdn/{}'.format(env_name),
+        test_env = Monitor(test_env, directory='/scratch/recordings/vdn/{}/{}'.format(env_name, args.seed),
                            video_callable=lambda episode_id: episode_id % 50 == 0)
 
     memory = ReplayBuffer(buffer_limit)
@@ -159,7 +159,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
         if episode_i % update_target_interval:
             q_target.load_state_dict(q.state_dict())
 
-        if (episode_i+1) % log_interval == 0:
+        if (episode_i + 1) % log_interval == 0:
             test_score = test(test_env, test_episodes, q)
             train_score = sum(score / log_interval)
             print("#{:<10}/{} episodes , avg train score : {:.1f}, test score: {:.1f} n_buffer : {}, eps : {:.1f}"
@@ -174,7 +174,17 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
 
 
 if __name__ == '__main__':
-    kwargs = {'env_name': 'ma_gym:Switch4-v0',
+    # Lets gather arguments
+    import argparse
+
+    parser = argparse.ArgumentParser(description='')
+    parser.add_argument('--env-name', required=True)
+    parser.add_argument('--seed', type=int, default=1, required=False)
+
+    # Process arguments
+    args = parser.parse_args()
+
+    kwargs = {'env_name': args.env_name,
               'lr': 0.0005,
               'batch_size': 32,
               'gamma': 0.99,
@@ -193,7 +203,6 @@ if __name__ == '__main__':
 
     if USE_WANDB:
         import wandb
-
-        wandb.init(project='minimal-marl', config={'algo': 'vdn', **kwargs}, monitor_gym=False)
+        wandb.init(project='minimal-marl', dir='/scratch/wandb', config={'algo': 'vdn', **kwargs}, monitor_gym=False)
 
     main(**kwargs)
