@@ -148,7 +148,7 @@ if __name__ == '__main__':
               'gamma': 0.99,
               'buffer_limit': 50000,
               'log_interval': 20,
-              'max_episodes': 20000,
+              'max_episodes': 30000,
               'max_epsilon': 0.9,
               'min_epsilon': 0.1,
               'test_episodes': 5,
