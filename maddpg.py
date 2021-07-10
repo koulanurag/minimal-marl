@@ -158,7 +158,6 @@ def main(env_name, lr_mu, lr_q, tau, gamma, batch_size, buffer_limit, max_episod
                           gumbel_max_temp - (gumbel_max_temp - gumbel_min_temp) * (episode_i / (0.6 * max_episodes)))
         state = env.reset()
         done = [False for _ in range(env.n_agents)]
-        # env.render()
         step_i = 0
         while not all(done):
             action_logits = mu(torch.Tensor(state).unsqueeze(0))
@@ -174,7 +173,6 @@ def main(env_name, lr_mu, lr_q, tau, gamma, batch_size, buffer_limit, max_episod
                         np.array(_done, dtype=int).tolist()))
             score += np.array(reward)
             state = next_state
-            # env.render()
 
         if memory.size() > warm_up_steps:
             for i in range(update_iter):
@@ -196,7 +194,7 @@ def main(env_name, lr_mu, lr_q, tau, gamma, batch_size, buffer_limit, max_episod
 
 
 if __name__ == '__main__':
-    kwargs = {'env_name': 'ma_gym:Switch2-v1',
+    kwargs = {'env_name': 'ma_gym:Switch2-v2',
               'lr_mu': 0.0005,
               'lr_q': 0.001,
               'batch_size': 32,
