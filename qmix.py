@@ -42,21 +42,32 @@ class ReplayBuffer:
 
 
 class MixNet(nn.Module):
-    def __init__(self, observation_space, action_space):
+    def __init__(self, observation_space, hidden_dim=32):
         super(MixNet, self).__init__()
-        self.num_agents = len(observation_space)
-        self.action_space = action_space
         state_size = sum([_.shape[0] for _ in observation_space])
-        self.fc1 = nn.Linear(self.num_agents + state_size, 128, bias=False)
-        self.fc2 = nn.Linear(128 + state_size, 64, bias=False)
-        self.fc3 = nn.Linear(64 + state_size, 1, bias=False)
+        self.hidden_dim = hidden_dim
+        self.n_agents = len(observation_space)
+        self.hyper_net_weight_1 = nn.Linear(state_size, self.n_agents * hidden_dim)
+        self.hyper_net_weight_2 = nn.Linear(state_size, hidden_dim)
+
+        self.hyper_net_bias_1 = nn.Linear(state_size, hidden_dim)
+        self.hyper_net_bias_2 = nn.Sequential(nn.Linear(state_size, hidden_dim),
+                                              nn.ReLU(),
+                                              nn.Linear(hidden_dim, 1))
 
     def forward(self, q_values, observations):
-        state = observations.view(observations.shape[0], np.prod(observations.shape[1:]))
-        x = torch.relu(self.fc1(torch.cat((q_values, state), dim=1)))
-        x = torch.relu(self.fc2(torch.cat((x, state), dim=1)))
-        x = self.fc3(torch.cat((x, state), dim=1))
+        batch_size, n_agents, obs_size = observations.shape
+        state = observations.view(batch_size, n_agents * obs_size)
 
+        weight_1 = torch.abs(self.hyper_net_weight_1(state))
+        weight_1 = weight_1.view(batch_size, self.hidden_dim, n_agents)
+        bias_1 = self.hyper_net_bias_1(state).unsqueeze(-1)
+        weight_2 = torch.abs(self.hyper_net_weight_2(state))
+        bias_2 = self.hyper_net_bias_2(state)
+
+        x = torch.bmm(weight_1, q_values.unsqueeze(-1)) + bias_1
+        x = torch.relu(x)
+        x = (weight_2.unsqueeze(-1) * x).sum(dim=1) + bias_2
         return x
 
 
@@ -95,7 +106,7 @@ def train(q, q_target, mix_net, mix_net_target, memory, optimizer, gamma, batch_
         q_a = q_out.gather(2, a.unsqueeze(-1).long()).squeeze(-1)
         pred_q = mix_net(q_a, s)
         max_q_prime = q_target(s_prime).max(dim=2)[0]
-        target_q = r.sum(dim=1, keepdims=True) + gamma * mix_net_target(max_q_prime * done_mask, s_prime)
+        target_q = r.sum(dim=1, keepdims=True) + gamma * mix_net_target(max_q_prime, s_prime) * done_mask
         loss = F.smooth_l1_loss(pred_q, target_q.detach())
         optimizer.zero_grad()
         loss.backward()
@@ -129,8 +140,8 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
     q_target = QNet(env.observation_space, env.action_space)
     q_target.load_state_dict(q.state_dict())
 
-    mix_net = MixNet(env.observation_space, env.action_space)
-    mix_net_target = MixNet(env.observation_space, env.action_space)
+    mix_net = MixNet(env.observation_space)
+    mix_net_target = MixNet(env.observation_space)
     mix_net_target.load_state_dict(mix_net.state_dict())
 
     optimizer = optim.Adam([{'params': q.parameters()}, {'params': mix_net.parameters()}], lr=lr)
@@ -145,11 +156,8 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
             action = q.sample_action(torch.Tensor(state).unsqueeze(0), epsilon)[0].data.cpu().numpy().tolist()
             next_state, reward, done, info = env.step(action)
             step_i += 1
-            if step_i >= env._max_steps or (step_i < env._max_steps and not all(done)):
-                _done = [False for _ in done]
-            else:
-                _done = done
-            memory.put((state, action, (np.array(reward)).tolist(), next_state, np.array(_done, dtype=int).tolist()))
+            memory.put((state, action, (np.array(reward)).tolist(), next_state,
+                        np.array([all(done)], dtype=int).tolist()))
             score += np.array(reward)
 
             state = next_state
