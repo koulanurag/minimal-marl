@@ -83,7 +83,7 @@ class QNet(nn.Module):
         return torch.zeros((batch_size, self.num_agents, self.hx_size))
 
 
-def train(q, q_target, memory, optimizer, gamma, batch_size, update_iter=10, chunk_size=10):
+def train(q, q_target, memory, optimizer, gamma, batch_size, update_iter=10, chunk_size=10, grad_clip_norm=5):
     _chunk_size = chunk_size if q.recurrent else 1
     for _ in range(update_iter):
         s, a, r, s_prime, done = memory.sample_chunk(batch_size, _chunk_size)
@@ -104,6 +104,7 @@ def train(q, q_target, memory, optimizer, gamma, batch_size, update_iter=10, chu
 
         optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(optimizer.parameters(), grad_clip_norm, norm_type=2)
         optimizer.step()
 
 
