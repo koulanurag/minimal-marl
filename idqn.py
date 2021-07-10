@@ -103,7 +103,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
     env = gym.make(env_name)
     test_env = gym.make(env_name)
     if monitor:
-        test_env = Monitor(test_env, directory='recordings/qmix/{}'.format(env_name),
+        test_env = Monitor(test_env, directory='recordings/idqn/{}'.format(env_name),
                            video_callable=lambda episode_id: episode_id % 50 == 0)
     memory = ReplayBuffer(buffer_limit)
 
