@@ -125,13 +125,9 @@ def test(env, num_episodes, q):
 
 def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episodes,
          max_epsilon, min_epsilon, test_episodes, warm_up_steps, update_iter, chunk_size,
-         update_target_interval, recurrent, monitor):
+         update_target_interval, recurrent):
     env = gym.make(env_name)
     test_env = gym.make(env_name)
-    if monitor:
-        test_env = Monitor(test_env, directory='recordings/vdn/{}'.format(env_name),
-                           video_callable=lambda episode_id: episode_id % 50 == 0)
-
     memory = ReplayBuffer(buffer_limit)
     q = QNet(env.observation_space, env.action_space, recurrent)
     q_target = QNet(env.observation_space, env.action_space, recurrent)
@@ -140,7 +136,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
 
     score = np.zeros(env.n_agents)
     for episode_i in range(max_episodes):
-        epsilon = max(min_epsilon, max_epsilon - (max_epsilon - min_epsilon) * (episode_i / (0.4 * max_episodes)))
+        epsilon = max(min_epsilon, max_epsilon - (max_epsilon - min_epsilon) * (episode_i / (0.6 * max_episodes)))
         state = env.reset()
         done = [False for _ in range(env.n_agents)]
         with torch.no_grad():
@@ -159,7 +155,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
         if episode_i % update_target_interval:
             q_target.load_state_dict(q.state_dict())
 
-        if (episode_i+1) % log_interval == 0:
+        if (episode_i + 1) % log_interval == 0:
             test_score = test(test_env, test_episodes, q)
             train_score = sum(score / log_interval)
             print("#{:<10}/{} episodes , avg train score : {:.1f}, test score: {:.1f} n_buffer : {}, eps : {:.1f}"
@@ -181,19 +177,18 @@ if __name__ == '__main__':
               'buffer_limit': 50000,
               'update_target_interval': 20,
               'log_interval': 100,
-              'max_episodes': 10000,
+              'max_episodes': 20000,
               'max_epsilon': 0.9,
               'min_epsilon': 0.1,
               'test_episodes': 5,
               'warm_up_steps': 2000,
               'update_iter': 10,
               'chunk_size': 10,
-              'recurrent': True,  # if disabled, internally, we use chunk_size of 1 and no gru cell is used.
-              'monitor': True}
+              'recurrent': True}  # if disabled, internally, we use chunk_size of 1 and no gru cell is used.
 
     if USE_WANDB:
         import wandb
 
-        wandb.init(project='minimal-marl', config={'algo': 'vdn', **kwargs}, monitor_gym=False)
+        wandb.init(project='minimal-marl', config={'algo': 'vdn', **kwargs})
 
     main(**kwargs)
