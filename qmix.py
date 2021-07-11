@@ -6,7 +6,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from ma_gym.wrappers import Monitor
 
 USE_WANDB = True  # if enabled, logs data on wandb server
 
@@ -123,11 +122,11 @@ def train(q, q_target, mix_net, mix_net_target, memory, optimizer, gamma, batch_
         for step_i in range(_chunk_size):
             q_out, hidden = q(s[:, step_i, :, :], hidden)
             q_a = q_out.gather(2, a[:, step_i, :].unsqueeze(-1).long()).squeeze(-1)
-            pred_q = mix_net(q_a, s)
+            pred_q = mix_net(q_a, s[:, step_i, :, :])
             max_q_prime, _ = q_target(s_prime[:, step_i, :, :], hidden.detach())
             max_q_prime = max_q_prime.max(dim=2)[0].squeeze(-1)
             target_q = r[:, step_i, :].sum(dim=1, keepdims=True)
-            target_q += gamma * mix_net_target(max_q_prime, s_prime) * (1 - done[:, step_i])
+            target_q += gamma * mix_net_target(max_q_prime, s_prime[:, step_i, :, :]) * (1 - done[:, step_i])
             loss = F.smooth_l1_loss(pred_q, target_q.detach())
             done_mask = done[:, step_i].squeeze(-1).bool()
             hidden[done_mask] = q.init_hidden(len(hidden[done_mask]))
@@ -161,14 +160,13 @@ def test(env, num_episodes, q, render_first=False):
 
 def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episodes,
          max_epsilon, min_epsilon, test_episodes, warm_up_steps, update_iter, chunk_size,
-         update_target_interval, recurrent, monitor):
+         update_target_interval, recurrent):
+    # create env.
     env = gym.make(env_name)
     test_env = gym.make(env_name)
-    if monitor:
-        test_env = Monitor(test_env, directory='recordings/qmix/{}'.format(env_name),
-                           video_callable=lambda episode_id: episode_id % 50 == 0)
     memory = ReplayBuffer(buffer_limit)
 
+    # create networks
     q = QNet(env.observation_space, env.action_space, recurrent)
     q_target = QNet(env.observation_space, env.action_space, recurrent)
     q_target.load_state_dict(q.state_dict())
@@ -181,7 +179,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
 
     score = np.zeros(env.n_agents)
     for episode_i in range(max_episodes):
-        epsilon = max(min_epsilon, max_epsilon - (max_epsilon - min_epsilon) * (episode_i / (0.4 * max_episodes)))
+        epsilon = max(min_epsilon, max_epsilon - (max_epsilon - min_epsilon) * (episode_i / (0.6 * max_episodes)))
         state = env.reset()
         done = [False for _ in range(env.n_agents)]
         with torch.no_grad():
@@ -203,7 +201,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
 
         if episode_i % log_interval == 0 and episode_i != 0:
             test_score, obs_images = test(test_env, test_episodes, q,
-                                          render_first=False)
+                                          render_first=((((episode_i + 1) // log_interval) % 2) == 0))
             train_score = sum(score / log_interval)
             print("#{:<10}/{} episodes , avg train score : {:.1f}, test score: {:.1f} n_buffer : {}, eps : {:.1f}"
                   .format(episode_i, max_episodes, train_score, test_score, memory.size(), epsilon))
@@ -224,7 +222,7 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='')
-    parser.add_argument('--env-name', required=False, default='Checkers-v0')
+    parser.add_argument('--env-name', required=False, default='ma_gym:Checkers-v0')
     parser.add_argument('--seed', type=int, default=1, required=False)
     parser.add_argument('--max-episodes', type=int, default=10000, required=False)
 
@@ -236,6 +234,7 @@ if __name__ == '__main__':
               'batch_size': 32,
               'gamma': 0.99,
               'buffer_limit': 50000,
+              'update_target_interval': 20,
               'log_interval': 100,
               'max_episodes': args.max_episodes,
               'max_epsilon': 0.9,
@@ -244,8 +243,8 @@ if __name__ == '__main__':
               'warm_up_steps': 2000,
               'update_iter': 10,
               'chunk_size': 10,
-              'recurrent': True,  # if disabled, internally, we use chunk_size of 1 and no gru cell is used.
-              'monitor': False}
+              'recurrent': True}  # if disabled, internally, we use chunk_size of 1 and no gru cell is used.
+
     if USE_WANDB:
         import wandb
 

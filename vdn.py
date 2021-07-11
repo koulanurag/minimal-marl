@@ -129,7 +129,7 @@ def test(env, num_episodes, q, render_first=False):
 
 def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episodes,
          max_epsilon, min_epsilon, test_episodes, warm_up_steps, update_iter, chunk_size,
-         update_target_interval, recurrent, monitor):
+         update_target_interval, recurrent):
     env = gym.make(env_name)
     test_env = gym.make(env_name)
     memory = ReplayBuffer(buffer_limit)
@@ -161,7 +161,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
 
         if (episode_i + 1) % log_interval == 0:
             test_score, obs_images = test(test_env, test_episodes, q,
-                                          render_first=((((episode_i + 1) // log_interval) % 2) == 0))
+                                          render_first=False)
             train_score = sum(score / log_interval)
             print("#{:<10}/{} episodes , avg train score : {:.1f}, test score: {:.1f} n_buffer : {}, eps : {:.1f}"
                   .format(episode_i, max_episodes, train_score, test_score, memory.size(), epsilon))
@@ -204,7 +204,7 @@ if __name__ == '__main__':
               'update_iter': 10,
               'chunk_size': 10,
               'recurrent': True,  # if disabled, internally, we use chunk_size of 1 and no gru cell is used.
-              'monitor': False}
+              }
 
     if USE_WANDB:
         import wandb
