@@ -1,4 +1,5 @@
 import collections
+import os
 
 import gym
 import numpy as np
@@ -76,7 +77,7 @@ class QNet(nn.Module):
         super(QNet, self).__init__()
         self.num_agents = len(observation_space)
         self.recurrent = recurrent
-        self.hx_size = 64
+        self.hx_size = 32
         for agent_i in range(self.num_agents):
             n_obs = observation_space[agent_i].shape[0]
             setattr(self, 'agent_feature_{}'.format(agent_i), nn.Sequential(nn.Linear(n_obs, 128),
@@ -89,7 +90,7 @@ class QNet(nn.Module):
 
     def forward(self, obs, hidden):
         q_values = [torch.empty(obs.shape[0], )] * self.num_agents
-        next_hidden = [torch.empty(obs.shape[0], 64, )] * self.num_agents
+        next_hidden = [torch.empty(obs.shape[0], self.hx, )] * self.num_agents
         for agent_i in range(self.num_agents):
             x = getattr(self, 'agent_feature_{}'.format(agent_i))(obs[:, agent_i, :])
             if self.recurrent:
@@ -118,22 +119,28 @@ def train(q, q_target, mix_net, mix_net_target, memory, optimizer, gamma, batch_
         s, a, r, s_prime, done = memory.sample_chunk(batch_size, _chunk_size)
 
         hidden = q.init_hidden(batch_size)
+        target_hidden = q_target.init_hidden(batch_size)
+
         loss = 0
         for step_i in range(_chunk_size):
             q_out, hidden = q(s[:, step_i, :, :], hidden)
             q_a = q_out.gather(2, a[:, step_i, :].unsqueeze(-1).long()).squeeze(-1)
             pred_q = mix_net(q_a, s[:, step_i, :, :])
-            max_q_prime, _ = q_target(s_prime[:, step_i, :, :], hidden.detach())
+
+            max_q_prime, target_hidden = q_target(s_prime[:, step_i, :, :], target_hidden.detach())
             max_q_prime = max_q_prime.max(dim=2)[0].squeeze(-1)
             target_q = r[:, step_i, :].sum(dim=1, keepdims=True)
             target_q += gamma * mix_net_target(max_q_prime, s_prime[:, step_i, :, :]) * (1 - done[:, step_i])
             loss = F.smooth_l1_loss(pred_q, target_q.detach())
+
             done_mask = done[:, step_i].squeeze(-1).bool()
             hidden[done_mask] = q.init_hidden(len(hidden[done_mask]))
+            target_hidden[done_mask] = q_target.init_hidden(len(target_hidden[done_mask]))
 
         optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(q.parameters(), grad_clip_norm, norm_type=2)
+        torch.nn.utils.clip_grad_norm_(mix_net.parameters(), grad_clip_norm, norm_type=2)
         optimizer.step()
 
 
@@ -161,6 +168,11 @@ def test(env, num_episodes, q, render_first=False):
 def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episodes,
          max_epsilon, min_epsilon, test_episodes, warm_up_steps, update_iter, chunk_size,
          update_target_interval, recurrent):
+    # save model
+    _path = '~/hpc-share/results/qmix/models/{}/{}/'.format(env_name, args.seed)
+    model_path = os.path.join(_path, 'model.p')
+    os.makedirs(_path, exist_ok=True)
+
     # create env.
     env = gym.make(env_name)
     test_env = gym.make(env_name)
@@ -177,7 +189,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
 
     optimizer = optim.Adam([{'params': q.parameters()}, {'params': mix_net.parameters()}], lr=lr)
 
-    score = np.zeros(env.n_agents)
+    score = 0
     for episode_i in range(max_episodes):
         epsilon = max(min_epsilon, max_epsilon - (max_epsilon - min_epsilon) * (episode_i / (0.6 * max_episodes)))
         state = env.reset()
@@ -189,7 +201,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
                 action = action[0].data.cpu().numpy().tolist()
                 next_state, reward, done, info = env.step(action)
                 memory.put((state, action, (np.array(reward)).tolist(), next_state, [int(all(done))]))
-                score += np.array(reward)
+                score += sum(reward)
                 state = next_state
 
         if memory.size() > warm_up_steps:
@@ -200,9 +212,8 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
             mix_net_target.load_state_dict(mix_net.state_dict())
 
         if episode_i % log_interval == 0 and episode_i != 0:
-            test_score, obs_images = test(test_env, test_episodes, q,
-                                          render_first=((((episode_i + 1) // log_interval) % 2) == 0))
-            train_score = sum(score / log_interval)
+            test_score, obs_images = test(test_env, test_episodes, q, render_first=False)
+            train_score = score / log_interval
             print("#{:<10}/{} episodes , avg train score : {:.1f}, test score: {:.1f} n_buffer : {}, eps : {:.1f}"
                   .format(episode_i, max_episodes, train_score, test_score, memory.size(), epsilon))
             if USE_WANDB:
@@ -211,7 +222,12 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
                 if obs_images is not None:
                     wandb.log({"test/video": wandb.Video(np.array(obs_images).swapaxes(3, 1).swapaxes(3, 2),
                                                          fps=32, format="gif")})
-            score = np.zeros(env.n_agents)
+            score = 0
+            torch.save(q.state_dict(), model_path)
+
+            # save networks on wandb
+            if (((episode_i + 1) // log_interval) == 1) and USE_WANDB:
+                wandb.save(model_path, policy='live')
 
     env.close()
     test_env.close()
