@@ -107,20 +107,25 @@ def train(q, q_target, memory, optimizer, gamma, batch_size, update_iter=10, chu
         optimizer.step()
 
 
-def test(env, num_episodes, q):
+def test(env, num_episodes, q, render_first=False):
     score = np.zeros(env.n_agents)
+    obs_images = None
     for episode_i in range(num_episodes):
         state = env.reset()
+        if episode_i == 0 and render_first:
+            obs_images = [env.render(mode='rgb_array')]
         done = [False for _ in range(env.n_agents)]
         with torch.no_grad():
             hidden = q.init_hidden()
             while not all(done):
                 action, hidden = q.sample_action(torch.Tensor(state).unsqueeze(0), hidden, epsilon=0)
                 next_state, reward, done, info = env.step(action[0].data.cpu().numpy().tolist())
+                if episode_i == 0 and render_first:
+                    obs_images.append(env.render(mode='rgb_array'))
                 score += np.array(reward)
                 state = next_state
 
-    return sum(score / num_episodes)
+    return sum(score / num_episodes), obs_images
 
 
 def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episodes,
@@ -128,10 +133,6 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
          update_target_interval, recurrent, monitor):
     env = gym.make(env_name)
     test_env = gym.make(env_name)
-    if monitor:
-        test_env = Monitor(test_env, directory='/scratch/recordings/vdn/{}/{}'.format(env_name, args.seed),
-                           video_callable=lambda episode_id: episode_id % 50 == 0)
-
     memory = ReplayBuffer(buffer_limit)
     q = QNet(env.observation_space, env.action_space, recurrent)
     q_target = QNet(env.observation_space, env.action_space, recurrent)
@@ -140,7 +141,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
 
     score = np.zeros(env.n_agents)
     for episode_i in range(max_episodes):
-        epsilon = max(min_epsilon, max_epsilon - (max_epsilon - min_epsilon) * (episode_i / (0.4 * max_episodes)))
+        epsilon = max(min_epsilon, max_epsilon - (max_epsilon - min_epsilon) * (episode_i / (0.6 * max_episodes)))
         state = env.reset()
         done = [False for _ in range(env.n_agents)]
         with torch.no_grad():
@@ -160,13 +161,17 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
             q_target.load_state_dict(q.state_dict())
 
         if (episode_i + 1) % log_interval == 0:
-            test_score = test(test_env, test_episodes, q)
+            test_score, obs_images = test(test_env, test_episodes, q,
+                                          render_first=((((episode_i + 1) // log_interval) % 5) == 0))
             train_score = sum(score / log_interval)
             print("#{:<10}/{} episodes , avg train score : {:.1f}, test score: {:.1f} n_buffer : {}, eps : {:.1f}"
                   .format(episode_i, max_episodes, train_score, test_score, memory.size(), epsilon))
             if USE_WANDB:
                 wandb.log({'episode': episode_i, 'test-score': test_score, 'buffer-size': memory.size(),
                            'epsilon': epsilon, 'train-score': train_score})
+                if obs_images is not None:
+                    wandb.log({"test/video": wandb.Video(np.array(obs_images).swapaxes(3, 1).swapaxes(3, 2),
+                                                         fps=32, format="gif")})
             score = np.zeros(env.n_agents)
 
     env.close()
@@ -178,8 +183,9 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='')
-    parser.add_argument('--env-name', required=True)
+    parser.add_argument('--env-name', required=False, default='Checkers-v0')
     parser.add_argument('--seed', type=int, default=1, required=False)
+    parser.add_argument('--max-episodes', type=int, default=10000, required=False)
 
     # Process arguments
     args = parser.parse_args()
@@ -191,7 +197,7 @@ if __name__ == '__main__':
               'buffer_limit': 50000,
               'update_target_interval': 20,
               'log_interval': 100,
-              'max_episodes': 10000,
+              'max_episodes': args.max_episodes,
               'max_epsilon': 0.9,
               'min_epsilon': 0.1,
               'test_episodes': 5,
@@ -199,10 +205,11 @@ if __name__ == '__main__':
               'update_iter': 10,
               'chunk_size': 10,
               'recurrent': True,  # if disabled, internally, we use chunk_size of 1 and no gru cell is used.
-              'monitor': True}
+              'monitor': False}
 
     if USE_WANDB:
         import wandb
-        wandb.init(project='minimal-marl', dir='/scratch/wandb', config={'algo': 'vdn', **kwargs}, monitor_gym=False)
+
+        wandb.init(project='minimal-marl', dir='~/hpc-share/wandb', config={'algo': 'vdn', **kwargs})
 
     main(**kwargs)
