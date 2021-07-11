@@ -136,7 +136,8 @@ def test(env, num_episodes, q, render_first=False):
 def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episodes, max_epsilon, min_epsilon,
          test_episodes, warm_up_steps, update_iter, chunk_size, update_target_interval, recurrent):
     # save model
-    _path = '~/hpc-share/results/models/{}/{}/'.format(env_name, args.seed)
+    _path = '~/hpc-share/results/vdn/models/{}/{}/'.format(env_name, args.seed)
+    _path = os.path.abspath(_path)
     model_path = os.path.join(_path, 'model.p')
     os.makedirs(_path, exist_ok=True)
 

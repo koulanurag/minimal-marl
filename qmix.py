@@ -170,6 +170,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
          update_target_interval, recurrent):
     # save model
     _path = '~/hpc-share/results/qmix/models/{}/{}/'.format(env_name, args.seed)
+    _path = os.path.abspath(_path)
     model_path = os.path.join(_path, 'model.p')
     os.makedirs(_path, exist_ok=True)
 
