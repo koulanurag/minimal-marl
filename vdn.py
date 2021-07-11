@@ -127,14 +127,15 @@ def test(env, num_episodes, q):
     return score / num_episodes
 
 
-def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episodes,
-         max_epsilon, min_epsilon, test_episodes, warm_up_steps, update_iter, chunk_size,
-         update_target_interval, recurrent):
+def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episodes, max_epsilon, min_epsilon,
+         test_episodes, warm_up_steps, update_iter, chunk_size, update_target_interval, recurrent):
+
+    # create env.
     env = gym.make(env_name)
     test_env = gym.make(env_name)
-
     memory = ReplayBuffer(buffer_limit)
 
+    # create networks
     q = QNet(env.observation_space, env.action_space, recurrent)
     q_target = QNet(env.observation_space, env.action_space, recurrent)
     q_target.load_state_dict(q.state_dict())
