@@ -1,4 +1,5 @@
 import collections
+import os
 
 import gym
 import numpy as np
@@ -134,6 +135,10 @@ def test(env, num_episodes, q, render_first=False):
 
 def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episodes, max_epsilon, min_epsilon,
          test_episodes, warm_up_steps, update_iter, chunk_size, update_target_interval, recurrent):
+    # save model
+    _path = '~/hpc-share/results/models/{}/{}/'.format(env_name, args.seed)
+    model_path = os.path.join(_path, 'model.p')
+    os.makedirs(_path, exist_ok=True)
 
     # create env.
     env = gym.make(env_name)
@@ -168,8 +173,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
             q_target.load_state_dict(q.state_dict())
 
         if (episode_i + 1) % log_interval == 0:
-            test_score, obs_images = test(test_env, test_episodes, q,
-                                          render_first=False)
+            test_score, obs_images = test(test_env, test_episodes, q, render_first=False)
             train_score = score / log_interval
             print("#{:<10}/{} episodes , avg train score : {:.1f}, test score: {:.1f} n_buffer : {}, eps : {:.1f}"
                   .format(episode_i, max_episodes, train_score, test_score, memory.size(), epsilon))
@@ -180,6 +184,11 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
                     wandb.log({"test/video": wandb.Video(np.array(obs_images).swapaxes(3, 1).swapaxes(3, 2),
                                                          fps=32, format="gif")})
             score = 0
+            torch.save(q.state_dict(), model_path)
+
+            # save networks on wandb
+            if (((episode_i + 1) // log_interval) == 1) and USE_WANDB:
+                wandb.save(model_path, policy='live')
 
     env.close()
     test_env.close()
