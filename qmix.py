@@ -1,15 +1,12 @@
 import collections
-import random
-
 import gym
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from ma_gym.wrappers import Monitor
 
-USE_WANDB = True  # if enabled, logs data on wandb server
+USE_WANDB = False  # if enabled, logs data on wandb server
 
 
 class ReplayBuffer:
@@ -124,11 +121,11 @@ def train(q, q_target, mix_net, mix_net_target, memory, optimizer, gamma, batch_
         for step_i in range(_chunk_size):
             q_out, hidden = q(s[:, step_i, :, :], hidden)
             q_a = q_out.gather(2, a[:, step_i, :].unsqueeze(-1).long()).squeeze(-1)
-            pred_q = mix_net(q_a, s)
+            pred_q = mix_net(q_a, s[:, step_i, :, :])
             max_q_prime, _ = q_target(s_prime[:, step_i, :, :], hidden.detach())
             max_q_prime = max_q_prime.max(dim=2)[0].squeeze(-1)
             target_q = r[:, step_i, :].sum(dim=1, keepdims=True)
-            target_q += gamma * mix_net_target(max_q_prime, s_prime) * (1 - done[:, step_i])
+            target_q += gamma * mix_net_target(max_q_prime, s_prime[:, step_i, :, :]) * (1 - done[:, step_i])
             loss = F.smooth_l1_loss(pred_q, target_q.detach())
             done_mask = done[:, step_i].squeeze(-1).bool()
             hidden[done_mask] = q.init_hidden(len(hidden[done_mask]))
@@ -158,7 +155,6 @@ def test(env, num_episodes, q):
 def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episodes,
          max_epsilon, min_epsilon, test_episodes, warm_up_steps, update_iter, chunk_size,
          update_target_interval, recurrent):
-
     # create env.
     env = gym.make(env_name)
     test_env = gym.make(env_name)
@@ -217,6 +213,7 @@ if __name__ == '__main__':
               'batch_size': 32,
               'gamma': 0.99,
               'buffer_limit': 50000,
+              'update_target_interval': 20,
               'log_interval': 100,
               'max_episodes': 20000,
               'max_epsilon': 0.9,
