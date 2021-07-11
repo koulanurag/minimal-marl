@@ -192,7 +192,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='')
     parser.add_argument('--env-name', required=False, default='Checkers-v0')
     parser.add_argument('--seed', type=int, default=1, required=False)
-    parser.add_argument('--max-episodes', type=int, default=10000, required=False)
+    parser.add_argument('--max-episodes', type=int, default=15000, required=False)
 
     # Process arguments
     args = parser.parse_args()
