@@ -46,12 +46,12 @@ class QNet(nn.Module):
         super(QNet, self).__init__()
         self.num_agents = len(observation_space)
         self.recurrent = recurrent
-        self.hx_size = 64
+        self.hx_size = 32
         for agent_i in range(self.num_agents):
             n_obs = observation_space[agent_i].shape[0]
-            setattr(self, 'agent_feature_{}'.format(agent_i), nn.Sequential(nn.Linear(n_obs, 128),
+            setattr(self, 'agent_feature_{}'.format(agent_i), nn.Sequential(nn.Linear(n_obs, 64),
                                                                             nn.ReLU(),
-                                                                            nn.Linear(128, self.hx_size),
+                                                                            nn.Linear(64, self.hx_size),
                                                                             nn.ReLU()))
             if recurrent:
                 setattr(self, 'agent_gru_{}'.format(agent_i), nn.GRUCell(self.hx_size, self.hx_size))
@@ -59,7 +59,7 @@ class QNet(nn.Module):
 
     def forward(self, obs, hidden):
         q_values = [torch.empty(obs.shape[0], )] * self.num_agents
-        next_hidden = [torch.empty(obs.shape[0], 64, )] * self.num_agents
+        next_hidden = [torch.empty(obs.shape[0], self.hx_size, )] * self.num_agents
         for agent_i in range(self.num_agents):
             x = getattr(self, 'agent_feature_{}'.format(agent_i))(obs[:, agent_i, :])
             if self.recurrent:
@@ -87,18 +87,23 @@ def train(q, q_target, memory, optimizer, gamma, batch_size, update_iter=10, chu
         s, a, r, s_prime, done = memory.sample_chunk(batch_size, _chunk_size)
 
         hidden = q.init_hidden(batch_size)
+        target_hidden = q_target.init_hidden(batch_size)
         loss = 0
         for step_i in range(_chunk_size):
             q_out, hidden = q(s[:, step_i, :, :], hidden)
             q_a = q_out.gather(2, a[:, step_i, :].unsqueeze(-1).long()).squeeze(-1)
             sum_q = q_a.sum(dim=1, keepdims=True)
-            max_q_prime, _ = q_target(s_prime[:, step_i, :, :], hidden.detach())
+
+            max_q_prime, target_hidden = q_target(s_prime[:, step_i, :, :], target_hidden.detach())
             max_q_prime = max_q_prime.max(dim=2)[0].squeeze(-1)
-            target = r[:, step_i, :].sum(dim=1, keepdims=True)
-            target += gamma * max_q_prime.sum(dim=1, keepdims=True) * (1 - done[:, step_i])
-            loss += F.smooth_l1_loss(sum_q, target.detach())
+            target_q = r[:, step_i, :].sum(dim=1, keepdims=True)
+            target_q += gamma * max_q_prime.sum(dim=1, keepdims=True) * (1 - done[:, step_i])
+
+            loss += F.smooth_l1_loss(sum_q, target_q.detach())
+
             done_mask = done[:, step_i].squeeze(-1).bool()
             hidden[done_mask] = q.init_hidden(len(hidden[done_mask]))
+            target_hidden[done_mask] = q_target.init_hidden(len(target_hidden[done_mask]))
 
         optimizer.zero_grad()
         loss.backward()
@@ -107,7 +112,7 @@ def train(q, q_target, memory, optimizer, gamma, batch_size, update_iter=10, chu
 
 
 def test(env, num_episodes, q, render_first=False):
-    score = np.zeros(env.n_agents)
+    score = 0
     obs_images = None
     for episode_i in range(num_episodes):
         state = env.reset()
@@ -121,24 +126,27 @@ def test(env, num_episodes, q, render_first=False):
                 next_state, reward, done, info = env.step(action[0].data.cpu().numpy().tolist())
                 if episode_i == 0 and render_first:
                     obs_images.append(env.render(mode='rgb_array'))
-                score += np.array(reward)
+                score += sum(reward)
                 state = next_state
 
-    return sum(score / num_episodes), obs_images
+    return score / num_episodes, obs_images
 
 
-def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episodes,
-         max_epsilon, min_epsilon, test_episodes, warm_up_steps, update_iter, chunk_size,
-         update_target_interval, recurrent):
+def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episodes, max_epsilon, min_epsilon,
+         test_episodes, warm_up_steps, update_iter, chunk_size, update_target_interval, recurrent):
+
+    # create env.
     env = gym.make(env_name)
     test_env = gym.make(env_name)
     memory = ReplayBuffer(buffer_limit)
+
+    # create networks
     q = QNet(env.observation_space, env.action_space, recurrent)
     q_target = QNet(env.observation_space, env.action_space, recurrent)
     q_target.load_state_dict(q.state_dict())
     optimizer = optim.Adam(q.parameters(), lr=lr)
 
-    score = np.zeros(env.n_agents)
+    score = 0
     for episode_i in range(max_episodes):
         epsilon = max(min_epsilon, max_epsilon - (max_epsilon - min_epsilon) * (episode_i / (0.6 * max_episodes)))
         state = env.reset()
@@ -150,7 +158,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
                 action = action[0].data.cpu().numpy().tolist()
                 next_state, reward, done, info = env.step(action)
                 memory.put((state, action, (np.array(reward)).tolist(), next_state, [int(all(done))]))
-                score += np.array(reward)
+                score += sum(reward)
                 state = next_state
 
         if memory.size() > warm_up_steps:
@@ -162,7 +170,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
         if (episode_i + 1) % log_interval == 0:
             test_score, obs_images = test(test_env, test_episodes, q,
                                           render_first=False)
-            train_score = sum(score / log_interval)
+            train_score = score / log_interval
             print("#{:<10}/{} episodes , avg train score : {:.1f}, test score: {:.1f} n_buffer : {}, eps : {:.1f}"
                   .format(episode_i, max_episodes, train_score, test_score, memory.size(), epsilon))
             if USE_WANDB:
@@ -171,7 +179,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
                 if obs_images is not None:
                     wandb.log({"test/video": wandb.Video(np.array(obs_images).swapaxes(3, 1).swapaxes(3, 2),
                                                          fps=32, format="gif")})
-            score = np.zeros(env.n_agents)
+            score = 0
 
     env.close()
     test_env.close()
@@ -203,8 +211,7 @@ if __name__ == '__main__':
               'warm_up_steps': 2000,
               'update_iter': 10,
               'chunk_size': 10,
-              'recurrent': True,  # if disabled, internally, we use chunk_size of 1 and no gru cell is used.
-              }
+              'recurrent': True}  # if disabled, internally, we use chunk_size of 1 and no gru cell is used.
 
     if USE_WANDB:
         import wandb
