@@ -1,5 +1,4 @@
 import collections
-import random
 
 import gym
 import numpy as np
@@ -139,20 +138,25 @@ def train(q, q_target, mix_net, mix_net_target, memory, optimizer, gamma, batch_
         optimizer.step()
 
 
-def test(env, num_episodes, q):
+def test(env, num_episodes, q, render_first=False):
     score = np.zeros(env.n_agents)
+    obs_images = None
     for episode_i in range(num_episodes):
         state = env.reset()
+        if episode_i == 0 and render_first:
+            obs_images = [env.render(mode='rgb_array')]
         done = [False for _ in range(env.n_agents)]
         with torch.no_grad():
             hidden = q.init_hidden()
             while not all(done):
                 action, hidden = q.sample_action(torch.Tensor(state).unsqueeze(0), hidden, epsilon=0)
                 next_state, reward, done, info = env.step(action[0].data.cpu().numpy().tolist())
+                if episode_i == 0 and render_first:
+                    obs_images.append(env.render(mode='rgb_array'))
                 score += np.array(reward)
                 state = next_state
 
-    return sum(score / num_episodes)
+    return sum(score / num_episodes), obs_images
 
 
 def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episodes,
@@ -198,13 +202,17 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
             mix_net_target.load_state_dict(mix_net.state_dict())
 
         if episode_i % log_interval == 0 and episode_i != 0:
-            test_score = test(test_env, test_episodes, q)
+            test_score, obs_images = test(test_env, test_episodes, q,
+                                          render_first=False)
             train_score = sum(score / log_interval)
             print("#{:<10}/{} episodes , avg train score : {:.1f}, test score: {:.1f} n_buffer : {}, eps : {:.1f}"
                   .format(episode_i, max_episodes, train_score, test_score, memory.size(), epsilon))
             if USE_WANDB:
                 wandb.log({'episode': episode_i, 'test-score': test_score,
                            'buffer-size': memory.size(), 'epsilon': epsilon, 'train-score': train_score})
+                if obs_images is not None:
+                    wandb.log({"test/video": wandb.Video(np.array(obs_images).swapaxes(3, 1).swapaxes(3, 2),
+                                                         fps=32, format="gif")})
             score = np.zeros(env.n_agents)
 
     env.close()
@@ -212,13 +220,24 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
 
 
 if __name__ == '__main__':
-    kwargs = {'env_name': 'ma_gym:Switch2-v2',
+    # Lets gather arguments
+    import argparse
+
+    parser = argparse.ArgumentParser(description='')
+    parser.add_argument('--env-name', required=False, default='Checkers-v0')
+    parser.add_argument('--seed', type=int, default=1, required=False)
+    parser.add_argument('--max-episodes', type=int, default=10000, required=False)
+
+    # Process arguments
+    args = parser.parse_args()
+
+    kwargs = {'env_name': args.env_name,
               'lr': 0.0005,
               'batch_size': 32,
               'gamma': 0.99,
               'buffer_limit': 50000,
               'log_interval': 100,
-              'max_episodes': 20000,
+              'max_episodes': args.max_episodes,
               'max_epsilon': 0.9,
               'min_epsilon': 0.1,
               'test_episodes': 5,

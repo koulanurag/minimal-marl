@@ -6,7 +6,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from ma_gym.wrappers import Monitor
 
 USE_WANDB = True  # if enabled, logs data on wandb server
 
