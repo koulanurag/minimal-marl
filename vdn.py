@@ -162,7 +162,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
 
         if (episode_i + 1) % log_interval == 0:
             test_score, obs_images = test(test_env, test_episodes, q,
-                                          render_first=((((episode_i + 1) // log_interval) % 5) == 0))
+                                          render_first=((((episode_i + 1) // log_interval) % 1) == 0))
             train_score = sum(score / log_interval)
             print("#{:<10}/{} episodes , avg train score : {:.1f}, test score: {:.1f} n_buffer : {}, eps : {:.1f}"
                   .format(episode_i, max_episodes, train_score, test_score, memory.size(), epsilon))
