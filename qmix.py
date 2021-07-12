@@ -43,11 +43,13 @@ class ReplayBuffer:
 
 
 class MixNet(nn.Module):
-    def __init__(self, observation_space, hidden_dim=32):
+    def __init__(self, observation_space, hidden_dim=32, hx_size=64):
         super(MixNet, self).__init__()
         state_size = sum([_.shape[0] for _ in observation_space])
         self.hidden_dim = hidden_dim
+        self.hx_size = hx_size
         self.n_agents = len(observation_space)
+        self.gru = nn.GRUCell(self.hx_size, self.hx_size)
         self.hyper_net_weight_1 = nn.Linear(state_size, self.n_agents * hidden_dim)
         self.hyper_net_weight_2 = nn.Linear(state_size, hidden_dim)
 
@@ -56,20 +58,24 @@ class MixNet(nn.Module):
                                               nn.ReLU(),
                                               nn.Linear(hidden_dim, 1))
 
-    def forward(self, q_values, observations):
+    def forward(self, q_values, observations, hidden):
         batch_size, n_agents, obs_size = observations.shape
         state = observations.view(batch_size, n_agents * obs_size)
+        hidden = self.gru(state, hidden)
 
-        weight_1 = torch.abs(self.hyper_net_weight_1(state))
+        weight_1 = torch.abs(self.hyper_net_weight_1(hidden))
         weight_1 = weight_1.view(batch_size, self.hidden_dim, n_agents)
-        bias_1 = self.hyper_net_bias_1(state).unsqueeze(-1)
-        weight_2 = torch.abs(self.hyper_net_weight_2(state))
-        bias_2 = self.hyper_net_bias_2(state)
+        bias_1 = self.hyper_net_bias_1(hidden).unsqueeze(-1)
+        weight_2 = torch.abs(self.hyper_net_weight_2(hidden))
+        bias_2 = self.hyper_net_bias_2(hidden)
 
         x = torch.bmm(weight_1, q_values.unsqueeze(-1)) + bias_1
         x = torch.relu(x)
         x = (weight_2.unsqueeze(-1) * x).sum(dim=1) + bias_2
-        return x
+        return x, hidden
+
+    def init_hidden(self, batch_size=1):
+        return torch.zeros((batch_size, self.hx_size))
 
 
 class QNet(nn.Module):
@@ -120,22 +126,27 @@ def train(q, q_target, mix_net, mix_net_target, memory, optimizer, gamma, batch_
 
         hidden = q.init_hidden(batch_size)
         target_hidden = q_target.init_hidden(batch_size)
+        mix_net_hidden = mix_net.init_hidden(batch_size)
+        mix_net_target_hidden = mix_net_target.init_hidden(batch_size)
 
         loss = 0
         for step_i in range(_chunk_size):
             q_out, hidden = q(s[:, step_i, :, :], hidden)
             q_a = q_out.gather(2, a[:, step_i, :].unsqueeze(-1).long()).squeeze(-1)
-            pred_q = mix_net(q_a, s[:, step_i, :, :])
+            pred_q, mix_net_hidden = mix_net(q_a, s[:, step_i, :, :], mix_net_hidden)
 
             max_q_prime, target_hidden = q_target(s_prime[:, step_i, :, :], target_hidden.detach())
             max_q_prime = max_q_prime.max(dim=2)[0].squeeze(-1)
-            target_q = r[:, step_i, :].sum(dim=1, keepdims=True)
-            target_q += gamma * mix_net_target(max_q_prime, s_prime[:, step_i, :, :]) * (1 - done[:, step_i])
+            q_prime_total, mix_net_target_hidden = mix_net_target(max_q_prime, s_prime[:, step_i, :, :],
+                                                                  mix_net_target_hidden.detach())
+            target_q = r[:, step_i, :].sum(dim=1, keepdims=True) + (gamma * q_prime_total * (1 - done[:, step_i]))
             loss = F.smooth_l1_loss(pred_q, target_q.detach())
 
             done_mask = done[:, step_i].squeeze(-1).bool()
             hidden[done_mask] = q.init_hidden(len(hidden[done_mask]))
             target_hidden[done_mask] = q_target.init_hidden(len(target_hidden[done_mask]))
+            mix_net_hidden[done_mask] = mix_net.init_hidden(len(mix_net_hidden[done_mask]))
+            mix_net_target_hidden[done_mask] = mix_net_target.init_hidden(len(mix_net_target_hidden[done_mask]))
 
         optimizer.zero_grad()
         loss.backward()
