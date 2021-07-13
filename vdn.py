@@ -199,7 +199,7 @@ if __name__ == '__main__':
     # Lets gather arguments
     import argparse
 
-    parser = argparse.ArgumentParser(description='')
+    parser = argparse.ArgumentParser(description='Value Decomposition Network (VDN)')
     parser.add_argument('--env-name', required=False, default='ma_gym:Checkers-v0')
     parser.add_argument('--seed', type=int, default=1, required=False)
     parser.add_argument('--no-recurrent', action='store_true')
