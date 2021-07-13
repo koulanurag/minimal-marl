@@ -10,7 +10,7 @@ the ease of understanding.
 ## Installation
 
 ```bash 
-  pip install ma-gym>=0.0.6 torch>=1.8 wandb
+  pip install ma-gym>=0.0.7 torch>=1.8 wandb
 ```
 
 ## Usage
@@ -21,10 +21,10 @@ python <algo_name>.py # such as `vdn.py`
 
 ## Algorithms
 
-- [x] IDQN ( Independent Deep-Q
+- [ ] IDQN ( Independent Deep-Q
   Network) [DQN version of [IQL](https://web.media.mit.edu/~cynthiab/Readings/tan-MAS-reinfLearn.pdf)]
-- [x] [VDN](https://arxiv.org/abs/1706.05296) (Value Decomposition Network)
-- [x] [QMIX](https://arxiv.org/pdf/1803.11485.pdf)
+- [ ] [VDN](https://arxiv.org/abs/1706.05296) (Value Decomposition Network)
+- [ ] [QMIX](https://arxiv.org/pdf/1803.11485.pdf)
 - [ ] [MADDPG](https://arxiv.org/abs/1706.02275) (Multi Agent Deep Deterministic Policy Gradient)
     - `Status: Not converging at the moment`
 
