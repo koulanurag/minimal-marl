@@ -178,7 +178,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
 
 if __name__ == '__main__':
     kwargs = {'env_name': 'ma_gym:Switch4-v0',
-              'lr': 0.0005,
+              'lr': 0.001,
               'batch_size': 32,
               'gamma': 0.99,
               'buffer_limit': 50000,

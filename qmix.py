@@ -126,9 +126,9 @@ def train(q, q_target, mix_net, mix_net_target, memory, optimizer, gamma, batch_
         target_hidden = q_target.init_hidden(batch_size)
         mix_net_target_hidden = mix_net_target.init_hidden(batch_size)
         mix_net_hidden = [torch.empty_like(mix_net_target_hidden) for _ in range(_chunk_size + 1)]
+        mix_net_hidden[0] = mix_net_target.init_hidden(batch_size)
 
         loss = 0
-        mix_net_hidden[0] = mix_net_target.init_hidden(batch_size)
         for step_i in range(_chunk_size):
             q_out, hidden = q(s[:, step_i, :, :], hidden)
             q_a = q_out.gather(2, a[:, step_i, :].unsqueeze(-1).long()).squeeze(-1)
@@ -156,7 +156,7 @@ def train(q, q_target, mix_net, mix_net_target, memory, optimizer, gamma, batch_
 
 
 def test(env, num_episodes, q):
-    score = np.zeros(env.n_agents)
+    score = 0
     for episode_i in range(num_episodes):
         state = env.reset()
         done = [False for _ in range(env.n_agents)]
@@ -165,10 +165,10 @@ def test(env, num_episodes, q):
             while not all(done):
                 action, hidden = q.sample_action(torch.Tensor(state).unsqueeze(0), hidden, epsilon=0)
                 next_state, reward, done, info = env.step(action[0].data.cpu().numpy().tolist())
-                score += np.array(reward)
+                score += sum(reward)
                 state = next_state
 
-    return sum(score / num_episodes)
+    return score / num_episodes
 
 
 def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episodes,
@@ -228,7 +228,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
 
 if __name__ == '__main__':
     kwargs = {'env_name': 'ma_gym:Switch2-v2',
-              'lr': 0.0005,
+              'lr': 0.001,
               'batch_size': 32,
               'gamma': 0.99,
               'buffer_limit': 50000,
@@ -246,6 +246,6 @@ if __name__ == '__main__':
     if USE_WANDB:
         import wandb
 
-        wandb.init(project='minimal-marl', config={'algo': 'qmix', **kwargs}, monitor_gym=True)
+        wandb.init(project='minimal-marl', config={'algo': 'qmix', **kwargs})
 
     main(**kwargs)
