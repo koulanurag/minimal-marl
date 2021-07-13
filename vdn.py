@@ -1,3 +1,4 @@
+import argparse
 import collections
 
 import gym
@@ -59,7 +60,7 @@ class QNet(nn.Module):
 
     def forward(self, obs, hidden):
         q_values = [torch.empty(obs.shape[0], )] * self.num_agents
-        next_hidden = [torch.empty(obs.shape[0], self.hx_size, )] * self.num_agents
+        next_hidden = [torch.empty(obs.shape[0], 1, self.hx_size)] * self.num_agents
         for agent_i in range(self.num_agents):
             x = getattr(self, 'agent_feature_{}'.format(agent_i))(obs[:, agent_i, :])
             if self.recurrent:
@@ -177,21 +178,31 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
 
 
 if __name__ == '__main__':
-    kwargs = {'env_name': 'ma_gym:Switch4-v0',
+    # Lets gather arguments
+    parser = argparse.ArgumentParser(description='Value Decomposition Network (VDN)')
+    parser.add_argument('--env-name', required=False, default='ma_gym:Checkers-v0')
+    parser.add_argument('--seed', type=int, default=1, required=False)
+    parser.add_argument('--no-recurrent', action='store_true')
+    parser.add_argument('--max-episodes', type=int, default=15000, required=False)
+
+    # Process arguments
+    args = parser.parse_args()
+
+    kwargs = {'env_name': args.env_name,
               'lr': 0.001,
               'batch_size': 32,
               'gamma': 0.99,
               'buffer_limit': 50000,
               'update_target_interval': 20,
               'log_interval': 100,
-              'max_episodes': 20000,
+              'max_episodes': args.max_episodes,
               'max_epsilon': 0.9,
               'min_epsilon': 0.1,
               'test_episodes': 5,
               'warm_up_steps': 2000,
               'update_iter': 10,
-              'chunk_size': 10,
-              'recurrent': True}  # if disabled, internally, we use chunk_size of 1 and no gru cell is used.
+              'chunk_size': 10,  # if not recurrent, internally, we use chunk_size of 1 and no gru cell is used.
+              'recurrent': not args.no_recurrent}
 
     if USE_WANDB:
         import wandb
