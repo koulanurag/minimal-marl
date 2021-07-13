@@ -202,6 +202,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='')
     parser.add_argument('--env-name', required=False, default='Checkers-v0')
     parser.add_argument('--seed', type=int, default=1, required=False)
+    parser.add_argument('--no-recurrent', action='store_true')
     parser.add_argument('--max-episodes', type=int, default=15000, required=False)
 
     # Process arguments
@@ -220,8 +221,8 @@ if __name__ == '__main__':
               'test_episodes': 5,
               'warm_up_steps': 2000,
               'update_iter': 10,
-              'chunk_size': 10,
-              'recurrent': True}  # if disabled, internally, we use chunk_size of 1 and no gru cell is used.
+              'chunk_size': 10,  # if not recurrent, internally, we use chunk_size of 1 and no gru cell is used.
+              'recurrent': not args.no_recurrent}
 
     if USE_WANDB:
         import wandb
