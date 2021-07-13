@@ -260,7 +260,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     kwargs = {'env_name': args.env_name,
-              'lr': 0.0005,
+              'lr': 0.001,
               'batch_size': 32,
               'gamma': 0.99,
               'buffer_limit': 50000,
