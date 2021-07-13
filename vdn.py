@@ -174,7 +174,7 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
             q_target.load_state_dict(q.state_dict())
 
         if (episode_i + 1) % log_interval == 0:
-            test_score, obs_images = test(test_env, test_episodes, q, render_first=False)
+            test_score, obs_images = test(test_env, test_episodes, q, render_first=True)
             train_score = score / log_interval
             print("#{:<10}/{} episodes , avg train score : {:.1f}, test score: {:.1f} n_buffer : {}, eps : {:.1f}"
                   .format(episode_i, max_episodes, train_score, test_score, memory.size(), epsilon))
