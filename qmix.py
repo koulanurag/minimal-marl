@@ -150,7 +150,7 @@ def train(q, q_target, mix_net, mix_net_target, memory, optimizer, gamma, batch_
             q_prime_total, mix_net_target_hidden = mix_net_target(max_q_prime, s_prime[:, step_i, :, :],
                                                                   mix_net_target_hidden.detach())
             target_q = r[:, step_i, :].sum(dim=1, keepdims=True) + (gamma * q_prime_total * (1 - done[:, step_i]))
-            loss = F.smooth_l1_loss(pred_q, target_q.detach())
+            loss += F.smooth_l1_loss(pred_q, target_q.detach())
 
             done_mask = done[:, step_i].squeeze(-1).bool()
             hidden[done_mask] = q.init_hidden(len(hidden[done_mask]))
@@ -167,7 +167,7 @@ def train(q, q_target, mix_net, mix_net_target, memory, optimizer, gamma, batch_
 
 
 def test(env, num_episodes, q, render_first=False):
-    score = np.zeros(env.n_agents)
+    score = 0
     obs_images = None
     for episode_i in range(num_episodes):
         state = env.reset()
@@ -181,10 +181,10 @@ def test(env, num_episodes, q, render_first=False):
                 next_state, reward, done, info = env.step(action[0].data.cpu().numpy().tolist())
                 if episode_i == 0 and render_first:
                     obs_images.append(env.render(mode='rgb_array'))
-                score += np.array(reward)
+                score += sum(reward)
                 state = next_state
 
-    return sum(score / num_episodes), obs_images
+    return score / num_episodes, obs_images
 
 
 def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episodes,
