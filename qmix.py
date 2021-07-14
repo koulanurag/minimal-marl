@@ -41,36 +41,45 @@ class ReplayBuffer:
 
 
 class MixNet(nn.Module):
-    def __init__(self, observation_space, hidden_dim=32, hx_size=64):
+    def __init__(self, observation_space, hidden_dim=32, hx_size=64, recurrent=False):
         super(MixNet, self).__init__()
         state_size = sum([_.shape[0] for _ in observation_space])
         self.hidden_dim = hidden_dim
         self.hx_size = hx_size
         self.n_agents = len(observation_space)
-        self.gru = nn.GRUCell(state_size, self.hx_size)
-        self.hyper_net_weight_1 = nn.Linear(self.hx_size, self.n_agents * hidden_dim)
-        self.hyper_net_weight_2 = nn.Linear(self.hx_size, hidden_dim)
+        self.recurrent = recurrent
 
-        self.hyper_net_bias_1 = nn.Linear(self.hx_size, hidden_dim)
-        self.hyper_net_bias_2 = nn.Sequential(nn.Linear(self.hx_size, hidden_dim),
+        hyper_net_input_size = state_size
+        if self.recurrent:
+            self.gru = nn.GRUCell(state_size, self.hx_size)
+            hyper_net_input_size = self.hx_size
+        self.hyper_net_weight_1 = nn.Linear(hyper_net_input_size, self.n_agents * hidden_dim)
+        self.hyper_net_weight_2 = nn.Linear(hyper_net_input_size, hidden_dim)
+
+        self.hyper_net_bias_1 = nn.Linear(hyper_net_input_size, hidden_dim)
+        self.hyper_net_bias_2 = nn.Sequential(nn.Linear(hyper_net_input_size, hidden_dim),
                                               nn.ReLU(),
                                               nn.Linear(hidden_dim, 1))
 
     def forward(self, q_values, observations, hidden):
         batch_size, n_agents, obs_size = observations.shape
         state = observations.view(batch_size, n_agents * obs_size)
-        next_hidden = self.gru(state, hidden)
 
-        weight_1 = torch.abs(self.hyper_net_weight_1(next_hidden))
+        x = state
+        if self.recurrent:
+            hidden = self.gru(x, hidden)
+            x = hidden
+
+        weight_1 = torch.abs(self.hyper_net_weight_1(x))
         weight_1 = weight_1.view(batch_size, self.hidden_dim, n_agents)
-        bias_1 = self.hyper_net_bias_1(next_hidden).unsqueeze(-1)
-        weight_2 = torch.abs(self.hyper_net_weight_2(next_hidden))
-        bias_2 = self.hyper_net_bias_2(next_hidden)
+        bias_1 = self.hyper_net_bias_1(x).unsqueeze(-1)
+        weight_2 = torch.abs(self.hyper_net_weight_2(x))
+        bias_2 = self.hyper_net_bias_2(x)
 
         x = torch.bmm(weight_1, q_values.unsqueeze(-1)) + bias_1
         x = torch.relu(x)
         x = (weight_2.unsqueeze(-1) * x).sum(dim=1) + bias_2
-        return x, next_hidden
+        return x, hidden
 
     def init_hidden(self, batch_size=1):
         return torch.zeros((batch_size, self.hx_size))
@@ -81,7 +90,7 @@ class QNet(nn.Module):
         super(QNet, self).__init__()
         self.num_agents = len(observation_space)
         self.recurrent = recurrent
-        self.hx_size = 64
+        self.hx_size = 32
         for agent_i in range(self.num_agents):
             n_obs = observation_space[agent_i].shape[0]
             setattr(self, 'agent_feature_{}'.format(agent_i), nn.Sequential(nn.Linear(n_obs, 128),
@@ -94,7 +103,7 @@ class QNet(nn.Module):
 
     def forward(self, obs, hidden):
         q_values = [torch.empty(obs.shape[0], )] * self.num_agents
-        next_hidden = [torch.empty(obs.shape[0], self.hx_size, )] * self.num_agents
+        next_hidden = [torch.empty(obs.shape[0], 1, self.hx_size, )] * self.num_agents
         for agent_i in range(self.num_agents):
             x = getattr(self, 'agent_feature_{}'.format(agent_i))(obs[:, agent_i, :])
             if self.recurrent:
@@ -184,8 +193,8 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
     q_target = QNet(env.observation_space, env.action_space, recurrent)
     q_target.load_state_dict(q.state_dict())
 
-    mix_net = MixNet(env.observation_space)
-    mix_net_target = MixNet(env.observation_space)
+    mix_net = MixNet(env.observation_space, recurrent=recurrent)
+    mix_net_target = MixNet(env.observation_space, recurrent=recurrent)
     mix_net_target.load_state_dict(mix_net.state_dict())
 
     optimizer = optim.Adam([{'params': q.parameters()}, {'params': mix_net.parameters()}], lr=lr)
@@ -227,21 +236,33 @@ def main(env_name, lr, gamma, batch_size, buffer_limit, log_interval, max_episod
 
 
 if __name__ == '__main__':
-    kwargs = {'env_name': 'ma_gym:Switch2-v2',
+    # Lets gather arguments
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Qmix')
+    parser.add_argument('--env-name', required=False, default='ma_gym:Checkers-v0')
+    parser.add_argument('--seed', type=int, default=1, required=False)
+    parser.add_argument('--no-recurrent', action='store_true')
+    parser.add_argument('--max-episodes', type=int, default=10000, required=False)
+
+    # Process arguments
+    args = parser.parse_args()
+
+    kwargs = {'env_name': args.env_name,
               'lr': 0.001,
               'batch_size': 32,
               'gamma': 0.99,
               'buffer_limit': 50000,
               'update_target_interval': 20,
               'log_interval': 100,
-              'max_episodes': 20000,
+              'max_episodes': args.max_episodes,
               'max_epsilon': 0.9,
               'min_epsilon': 0.1,
               'test_episodes': 5,
               'warm_up_steps': 2000,
               'update_iter': 10,
-              'chunk_size': 10,
-              'recurrent': True}  # if disabled, internally, we use chunk_size of 1 and no gru cell is used.
+              'chunk_size': 10,  # if not recurrent, internally, we use chunk_size of 1 and no gru cell is used.
+              'recurrent': not args.no_recurrent}
 
     if USE_WANDB:
         import wandb
