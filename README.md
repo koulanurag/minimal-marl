@@ -6,6 +6,7 @@ by [`minimalRl`](https://github.com/seungeunrho/minimalRL) which provides minima
 the ease of understanding.
 
 [![](https://img.shields.io/badge/-Training%20Results-informational?style=for-the-badge)](https://wandb.ai/koulanurag/minimal-marl/reports/Minimal-Marl--Vmlldzo4MzM2MDc?accessToken=vy6dydemfdvekct02pevp3girjvb0tnt1ou2acb2h0fl478hdjqqu8ydbco6uz38)
+[![](https://img.shields.io/badge/-Work%20in%20Progress-orange?style=for-the-badge)]()
 
 ## Installation
 
